@@ -121,8 +121,8 @@ export class Enemy extends Entity {
             speed = 18;
         } else if (type === 'bomber') {
             color = 0x00ff44;
-            radius = 3.0;
-            speed = 8;
+            radius = 3.5; // 少し大きく
+            speed = 12; // 絨毯爆撃用に少し速く
             health = 5;
         } else if (type === 'helicopter') {
             color = 0xffff00;
@@ -340,6 +340,9 @@ export class Enemy extends Entity {
         this.evasionVelocity = new THREE.Vector3();
         this.flareTimer = 0;
         this.originalSpeed = speed;
+
+        // 爆撃タイマー
+        this.bombTimer = Math.random() * 2.0;
     }
 
     createLockonMarker() {
@@ -439,9 +442,9 @@ export class Enemy extends Entity {
             if (this.movementMode === 'direct' || this.movementMode === 'flyby' || this.movementMode === 'crossing') {
                 this.mesh.position.addScaledVector(this.velocity, dt);
 
-                // 目的地に到達したか（Directのみ拠点を攻撃）
+                // 目的地に到達したか（画面外判定を拡張：絨毯爆撃対応）
                 const distFromCenter = this.mesh.position.length();
-                if (distFromCenter > 300.0) {
+                if (distFromCenter > 1000.0) {
                     this.remove();
                 } else if (this.mesh.position.distanceTo(this.targetPos) < 2.0) {
                     if (this.movementMode === 'direct') {
@@ -529,6 +532,28 @@ export class Enemy extends Entity {
         // マーカーをカメラの方向に向ける
         if (this.lockonMarker.visible && camera) {
             this.lockonMarker.quaternion.copy(camera.quaternion);
+        }
+
+        // 爆撃機の爆撃ロジック
+        if (this.type === 'bomber' && !this.isDead && this.movementMode === 'direct') {
+            this.bombTimer -= dt;
+            if (this.bombTimer <= 0) {
+                this.dropBomb(flares);
+                this.bombTimer = 0.5 + Math.random() * 1.5;
+            }
+        }
+    }
+
+    dropBomb(flares = []) {
+        // 爆撃演出：火の玉（フレアを流用）を真下に落とす
+        const bomb = Flare.spawn(this.scene, this.mesh.position.clone());
+        if (bomb) {
+            // 下方への初速を強く設定
+            bomb.velocity.set(0, -25, 10); // 前方へも少し飛ばして動的に
+            bomb.mesh.material.color.setHex(0xff3300); // 爆弾らしい赤
+            bomb.mesh.scale.setScalar(2.5);
+            bomb.isBomb = true; // 地面で爆発させるためのフラグ
+            if (flares) flares.push(bomb);
         }
     }
 }
@@ -692,6 +717,7 @@ export class Flare extends Entity {
         this.mesh.position.copy(position);
         this.mesh.visible = true;
         this.isDead = false;
+        this.isBomb = false; // デフォルトは偽
         this.scene.add(this.mesh);
 
         // 落下速度と拡散
@@ -721,9 +747,20 @@ export class Flare extends Entity {
         }
     }
 
-    update(dt) {
+    update(dt, explosions = []) {
         this.velocity.y -= 9.8 * dt; // 重力加速
         this.mesh.position.addScaledVector(this.velocity, dt);
+
+        // 地面衝突判定 (y=0)
+        if (this.mesh.position.y <= 0) {
+            this.mesh.position.y = 0;
+            if (this.isBomb && explosions) {
+                // 爆弾の場合は地面で爆発
+                explosions.push(new Explosion(this.scene, this.mesh.position.clone(), 1.5));
+            }
+            this.remove();
+            return;
+        }
 
         this.lifeTime -= dt;
         if (this.lifeTime < 0.5) {

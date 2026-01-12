@@ -57,6 +57,11 @@ export class GameLoop {
         this.gameMode = 'missile'; // 'missile' or 'aircraft'
         this.isPlaying = false;
 
+        // 絨毯爆撃イベント用フラグ
+        this.carpetBombingTriggered = false;
+        this.carpetBombingCount = 0;
+        this.carpetBombingTimer = 0;
+
         this.kills = { missile: 0, drone: 0, fighter: 0, helicopter: 0, bomber: 0 };
         this.killEls = {
             missile: document.getElementById('kill-missile'),
@@ -112,6 +117,11 @@ export class GameLoop {
         this.missileAmmo = this.maxMissileAmmo;
         this.missileReloadTimer = 0;
         this.lockedTargets = [];
+
+        // イベント状態のリセット
+        this.carpetBombingTriggered = false;
+        this.carpetBombingCount = 0;
+        this.carpetBombingTimer = 0;
 
         Object.keys(this.kills).forEach(k => {
             this.kills[k] = 0;
@@ -180,6 +190,9 @@ export class GameLoop {
 
     update(dt) {
         if (!this.isPlaying) return;
+
+        // 特殊イベントチェック（スコア5000到達時）
+        this.checkEvents(dt);
 
         // ミサイル装填管理
         if (this.missileReloadTimer > 0) {
@@ -280,8 +293,8 @@ export class GameLoop {
         this.explosions.forEach(e => e.update(dt));
         this.debris.forEach(d => d.update(dt));
 
-        // フレア更新
-        this.flares.forEach(f => f.update(dt));
+        // フレア（爆弾）更新
+        this.flares.forEach(f => f.update(dt, this.explosions));
         for (let i = this.flares.length - 1; i >= 0; i--) {
             if (this.flares[i].isDead) this.flares.splice(i, 1);
         }
@@ -290,6 +303,7 @@ export class GameLoop {
         this.handleCollisions();
 
         this.radar.update();
+        this.checkEvents(dt);
         this.updateUI();
     }
 
@@ -637,4 +651,41 @@ export class GameLoop {
             }
         }
     }
+
+    checkEvents(dt) {
+        // スコア5000で爆撃機500機の絨毯爆撃イベント（航空機モード限定）
+        if (this.gameMode === 'aircraft' && this.score >= 10000 && !this.carpetBombingTriggered) {
+            this.carpetBombingTriggered = true;
+            this.carpetBombingCount = 500;
+            this.carpetBombingTimer = 0;
+            console.log("CARPET BOMBING EVENT: 500 BOMBERS APPROACHING!");
+        }
+
+        // 0.05秒間隔で1機ずつ出現させ、負荷を抑えて500機出す
+        if (this.carpetBombingCount > 0) {
+            this.carpetBombingTimer -= dt;
+            if (this.carpetBombingTimer <= 0) {
+                this.spawnEventBomber();
+                this.carpetBombingCount--;
+                this.carpetBombingTimer = 0.05;
+            }
+        }
+    }
+
+    spawnEventBomber() {
+        const spreadX = 400; // 横幅を狭めて密集させる
+        const spreadY = 30;  // 高度差も少なくする
+        const x = (Math.random() - 0.5) * spreadX;
+        const y = 60 + Math.random() * spreadY;
+        const z = -500; // 500m先から
+
+        const pos = new THREE.Vector3(x, y, z);
+        // プレイヤーの位置（原点付近）を通るようにターゲットを設定
+        const target = new THREE.Vector3(x * 0.5, 10, 500);
+
+        const enemy = new Enemy(this.scene, pos, target, 'bomber', 'direct');
+        enemy.health = 1; // ボーナス機
+        this.enemies.push(enemy);
+    }
 }
+
