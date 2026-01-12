@@ -24,6 +24,12 @@ const btnMissile = document.getElementById('btn-missile');
 const btnAircraft = document.getElementById('btn-aircraft');
 
 const handleStart = (mode) => {
+  // オーバーレイが開いたままなら閉じる
+  const infoOverlay = document.getElementById('info-overlay');
+  if (infoOverlay && !infoOverlay.classList.contains('hidden')) {
+    infoOverlay.classList.add('hidden');
+  }
+
   console.log(`Main: Starting game in ${mode} mode`);
   // 必ずゲームを開始状態にする
   gameLoop.startGame(mode);
@@ -48,6 +54,46 @@ if (btnAircraft) {
     handleStart('aircraft');
   });
 }
+
+// ------ Mission Info Logic Start ------
+const btnInfo = document.getElementById('btn-info');
+const infoOverlay = document.getElementById('info-overlay');
+const btnCloseInfo = document.getElementById('btn-close-info');
+const tabBtns = document.querySelectorAll('.tab-btn');
+const infoSections = document.querySelectorAll('.info-section');
+
+if (btnInfo && infoOverlay) {
+  btnInfo.addEventListener('click', (e) => {
+    e.stopPropagation();
+    infoOverlay.classList.remove('hidden');
+  });
+}
+
+if (btnCloseInfo && infoOverlay) {
+  btnCloseInfo.addEventListener('click', (e) => {
+    e.stopPropagation();
+    infoOverlay.classList.add('hidden');
+  });
+}
+
+// Tab Switching Logic
+tabBtns.forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    // Reset Active States
+    tabBtns.forEach(b => b.classList.remove('active'));
+    infoSections.forEach(s => s.classList.remove('active'));
+
+    // Set Active State
+    btn.classList.add('active');
+    const targetId = btn.getAttribute('data-target');
+    const targetSection = document.getElementById(targetId);
+    if (targetSection) {
+      targetSection.classList.add('active');
+    }
+  });
+});
+// ------ Mission Info Logic End ------
 
 const pauseOverlay = document.getElementById('pause-overlay');
 const btnResume = document.getElementById('btn-resume');

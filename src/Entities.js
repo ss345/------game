@@ -293,6 +293,46 @@ export class Enemy extends Entity {
             fin1.position.z = -radius * 0.5; // 尾部
             fin2.position.z = -radius * 0.5;
             this.model.add(fin1, fin2);
+        } else if (type === 'drone') {
+            // --- ドローン (クアッドコプター) ---
+            const bodyGeom = new THREE.BoxGeometry(radius * 0.8, radius * 0.2, radius * 0.8);
+            const body = new THREE.Mesh(bodyGeom, bodyMaterial);
+            this.model.add(body);
+
+            // アーム
+            const armGeom = new THREE.BoxGeometry(radius * 2.2, radius * 0.05, radius * 0.05);
+            const arm1 = new THREE.Mesh(armGeom, accentMaterial);
+            arm1.rotation.y = Math.PI / 4; // X字型
+            this.model.add(arm1);
+
+            const arm2 = new THREE.Mesh(armGeom, accentMaterial);
+            arm2.rotation.y = -Math.PI / 4;
+            this.model.add(arm2);
+
+            // ローター (4つ)
+            this.droneRotors = [];
+            const rotorGeom = new THREE.BoxGeometry(radius * 0.8, radius * 0.02, radius * 0.05);
+            const rotorOffsets = [
+                { x: radius * 0.8, z: radius * 0.8 },
+                { x: -radius * 0.8, z: radius * 0.8 },
+                { x: radius * 0.8, z: -radius * 0.8 },
+                { x: -radius * 0.8, z: -radius * 0.8 }
+            ];
+
+            rotorOffsets.forEach(offset => {
+                const rotor = new THREE.Mesh(rotorGeom, accentMaterial);
+                rotor.position.set(offset.x, radius * 0.15, offset.z);
+                this.model.add(rotor);
+                this.droneRotors.push(rotor);
+
+                // プロペラガード的なリング
+                const guardGeom = new THREE.TorusGeometry(radius * 0.5, radius * 0.02, 4, 16);
+                const guard = new THREE.Mesh(guardGeom, bodyMaterial);
+                guard.rotation.x = Math.PI / 2;
+                guard.position.set(offset.x, radius * 0.15, offset.z);
+                this.model.add(guard);
+            });
+
         } else {
             const geometry = new THREE.SphereGeometry(radius, 8, 8);
             this.model.add(new THREE.Mesh(geometry, bodyMaterial));
@@ -482,6 +522,15 @@ export class Enemy extends Entity {
         if (this.type === 'helicopter') {
             if (this.mainRotor) this.mainRotor.rotation.y += 15.0 * dt;
             if (this.tailRotor) this.tailRotor.rotation.x += 20.0 * dt;
+        }
+
+        // ドローンのローター回転
+        if (this.type === 'drone' && this.droneRotors) {
+            this.droneRotors.forEach((rotor, i) => {
+                // 交互に逆回転させるとリアルだが、単純に回転させる
+                const dir = (i % 2 === 0) ? 1 : -1;
+                rotor.rotation.y += 20.0 * dt * dir;
+            });
         }
 
         // 地面衝突回避ロジック (航空機タイプのみ、かつ生存中)
