@@ -6,12 +6,13 @@ import * as THREE from 'three';
  * @returns {THREE.Vector3}
  */
 export function getRandomHemispherePosition(radius) {
-    // 上空のみ（Y > ground）に配置するための角度制限
-    const polar = Math.random() * (Math.PI / 2 - 0.2);
+    // より地平線に近い（高度を低くする）ために、天頂（0）から遠ざける
+    // 角度を PI/2 (90度) に近づけるほど高度が下がる
+    const polar = (Math.PI / 2) - (0.2 + Math.random() * 0.4);
     const azimuth = Math.random() * Math.PI * 2;
 
     const x = radius * Math.sin(polar) * Math.cos(azimuth);
-    const y = radius * Math.cos(polar);
+    const y = radius * Math.cos(polar); // cos(polar) が小さくなるため高度が下がる
     const z = radius * Math.sin(polar) * Math.sin(azimuth);
 
     return new THREE.Vector3(x, y, z);

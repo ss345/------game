@@ -1,3 +1,5 @@
+import * as THREE from 'three';
+
 export class Radar {
     constructor(containerId, gameLoop) {
         this.gameLoop = gameLoop;
@@ -12,7 +14,8 @@ export class Radar {
         this.container = document.getElementById(containerId);
         this.container.appendChild(this.canvas);
 
-        this.range = 150; // Radar range in world units
+        this.range = 300; // スポーン距離250mに合わせて、レーダー範囲を300mに拡張
+        this._lookDir = new THREE.Vector3(); // フリーズ防止：計算用ベクトルを再利用するように事前定義
     }
 
     update() {
@@ -37,8 +40,12 @@ export class Radar {
         this.ctx.stroke();
 
         // プレイヤーの向き（視覚的なFOVコーン）
-        const rotationY = this.gameLoop.camera.rotation.y;
-        const fov = this.gameLoop.camera.fov * (Math.PI / 180); // Radian conversion
+        // カメラのワールド方向を取得
+        this.gameLoop.camera.getWorldDirection(this._lookDir);
+
+        // XZ平面上での角度を計算（-Zが上、+Xが右にマッピングされるように atan2(z, x) を使用）
+        const heading = Math.atan2(this._lookDir.z, this._lookDir.x);
+        const fov = 1.0;
 
         this.ctx.save();
         this.ctx.translate(this.size / 2, this.size / 2);
@@ -46,21 +53,15 @@ export class Radar {
         // 視界範囲（扇形）
         this.ctx.beginPath();
         this.ctx.moveTo(0, 0);
-        // カメラの正面は -Z 方向（2Dでは上方向が -Z または +X depending on mapping）
-        // 現在のEnemyマッピングでは dx (X) と dz (Z) をそのままプロットしているので
-        // 回転角 rotationY は Y軸周り（XZ平面上）
-        // 扇形の開始角と終了角を計算
-        const startAngle = -rotationY - Math.PI / 2 - fov / 2;
-        const endAngle = -rotationY - Math.PI / 2 + fov / 2;
-
-        this.ctx.arc(0, 0, this.size / 2 - 2, startAngle, endAngle);
+        // Canvasの角度系 (0は右、PI/2は下) にそのまま適合
+        this.ctx.arc(0, 0, this.size / 2 - 2, heading - fov / 2, heading + fov / 2);
         this.ctx.closePath();
         this.ctx.fillStyle = 'rgba(0, 255, 0, 0.15)';
         this.ctx.fill();
 
         // 視界の境界線
-        this.ctx.strokeStyle = 'rgba(0, 255, 0, 0.3)';
-        this.ctx.lineWidth = 1;
+        this.ctx.strokeStyle = 'rgba(0, 255, 0, 0.4)';
+        this.ctx.lineWidth = 1.5;
         this.ctx.stroke();
 
         this.ctx.restore();
@@ -84,6 +85,8 @@ export class Radar {
 
             if (dist < this.range) {
                 const scale = (this.size / 2) / this.range;
+                // レコーダーのY軸（画面上の垂直）はワールドのZ軸（奥行き）に対応
+                // キャンバスは下方向が+Yなので、-dz を使うことで「上が北（-Z）」になるようにマッピング
                 const rx = dx * scale;
                 const rz = dz * scale;
 
@@ -95,9 +98,10 @@ export class Radar {
                 this.ctx.arc(rx, rz, 3, 0, Math.PI * 2);
                 this.ctx.fill();
 
-                // 敵がミサイルなら枠をつける
-                if (enemy.type === 'missile') {
+                // 敵がミサイルや爆撃機なら枠をつける
+                if (enemy.type === 'missile' || enemy.type === 'bomber') {
                     this.ctx.strokeStyle = '#fff';
+                    this.ctx.lineWidth = 1;
                     this.ctx.stroke();
                 }
             }

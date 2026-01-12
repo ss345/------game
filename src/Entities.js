@@ -45,7 +45,7 @@ export class Projectile extends Entity {
         super(scene, position, 0xffff00, 0.5);
         this.velocity = direction.clone().normalize().multiplyScalar(speed);
         this.speed = speed;
-        this.lifeTime = 3.0; // 生存時間（秒）
+        this.lifeTime = 5.0; // 生存時間（秒）を延長
         this.type = type; // 'vulcan', 'missile', 'laser'
         this.target = target;
 
@@ -59,6 +59,10 @@ export class Projectile extends Entity {
             this.mesh.material.color.setHex(0xffaa00);
             this.radius = 1.0;
             this.lifeTime = 5.0;
+        } else if (type === 'vulcan') {
+            // 表示のみ小さくして視認性を確保
+            this.mesh.scale.setScalar(0.2);
+            // 当たり判定は0.5のまま維持
         }
     }
 
@@ -110,20 +114,22 @@ export class Enemy extends Entity {
         if (type === 'drone') {
             color = 0xff00ff;
             radius = 1.0;
-            speed = 10;
+            speed = 4;
         } else if (type === 'fighter') {
-            color = 0xcccccc; // 明るいグレーに変更
+            color = 0xcccccc;
             radius = 1.2;
-            speed = 40; // 高速
-        } else if (type === 'bomber') {
-            color = 0x00ff44; // より明るいグリーンに変更
-            radius = 3.0; // 巨大
-            speed = 12; // 低速
-            health = 5; // 高耐久
-        } else if (type === 'helicopter') {
-            color = 0xffff00; // 鮮やかなイエローに変更
-            radius = 1.8;
             speed = 18;
+        } else if (type === 'bomber') {
+            color = 0x00ff44;
+            radius = 3.0;
+            speed = 8;
+            health = 5;
+        } else if (type === 'helicopter') {
+            color = 0xffff00;
+            radius = 1.8;
+            speed = 8;
+        } else if (type === 'missile') {
+            speed = 10;
         }
 
         super(scene, position, color, radius);
@@ -434,11 +440,15 @@ export class Enemy extends Entity {
                 this.mesh.position.addScaledVector(this.velocity, dt);
 
                 // 目的地に到達したか（Directのみ拠点を攻撃）
-                if (this.mesh.position.distanceTo(this.targetPos) < 2.0) {
+                const distFromCenter = this.mesh.position.length();
+                if (distFromCenter > 300.0) {
+                    this.remove();
+                } else if (this.mesh.position.distanceTo(this.targetPos) < 2.0) {
                     if (this.movementMode === 'direct') {
                         this.impact = true;
+                        this.remove();
                     }
-                    this.remove(); // 画面外へ消える設定
+                    // flybyなどはそのまま通過
                 }
             } else if (this.movementMode === 'orbit') {
                 this.angle += this.orbitSpeed * dt;
@@ -463,13 +473,16 @@ export class Enemy extends Entity {
 
         // 地面衝突回避ロジック (航空機タイプのみ、かつ生存中)
         if (this.type !== 'missile' && this.type !== 'drone' && !this.isDead) {
-            const minHeight = 10.0;
+            const minHeight = 35.0; // 回避開始高度
             if (this.mesh.position.y < minHeight) {
-                // 上昇方向に速度を補正
-                const pullUpForce = (minHeight - this.mesh.position.y) * 0.5;
-                this.velocity.y += pullUpForce * dt * 20.0;
+                // 上昇方向に強い力を加える
+                const pullUpForce = (minHeight - this.mesh.position.y) * 3.0;
+                this.velocity.y += pullUpForce * dt;
 
-                // 進行方向も上に向け直す
+                // 速度を一定に保ちつつ、進行方向を更新
+                this.velocity.setLength(this.originalSpeed);
+
+                // 強制的に機種を上げる
                 const lookTarget = this.mesh.position.clone().add(this.velocity);
                 this.mesh.lookAt(lookTarget);
             }
@@ -524,18 +537,33 @@ export class Enemy extends Entity {
  * 爆発エフェクトクラス
  */
 export class Explosion extends Entity {
-    constructor(scene, position) {
-        super(scene, position, 0xffaa00, 0.1);
-        this.growthRate = 10.0;
-        this.maxRadius = 5.0;
+    constructor(scene, position, scale = 1.0) {
+        super(scene, position, 0xffffff, 0.1);
+        this.growthRate = 25.0 * scale;
+        this.maxRadius = 7.0 * scale;
         this.currentRadius = 0.5;
-        this.mesh.material = new THREE.MeshBasicMaterial({ color: 0xffaa00, transparent: true, opacity: 1.0 });
+
+        // メインコア
+        this.mesh.material = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1.0 });
+
+        // 外側の炎
+        const outerGeom = new THREE.SphereGeometry(1.2, 16, 16);
+        const outerMat = new THREE.MeshBasicMaterial({ color: 0xff4400, transparent: true, opacity: 0.8 });
+        this.outerMesh = new THREE.Mesh(outerGeom, outerMat);
+        this.mesh.add(this.outerMesh);
     }
 
     update(dt) {
         this.currentRadius += this.growthRate * dt;
         this.mesh.scale.setScalar(this.currentRadius);
-        this.mesh.material.opacity -= 1.5 * dt;
+        this.mesh.material.opacity -= 2.0 * dt;
+        this.outerMesh.material.opacity -= 1.2 * dt;
+
+        if (this.mesh.material.opacity > 0.5) {
+            this.mesh.material.color.lerp(new THREE.Color(0xffaa00), dt * 5);
+        } else {
+            this.mesh.material.color.lerp(new THREE.Color(0xff0000), dt * 5);
+        }
 
         if (this.mesh.material.opacity <= 0) {
             this.remove();
@@ -551,22 +579,25 @@ export class Debris extends Entity {
         const radius = 0.2 + Math.random() * 0.4;
         super(scene, position, color, radius);
 
-        // よりメカニックな形状にする（ランダムな多面体や箱）
-        const types = ['box', 'tetra', 'sphere'];
+        // よりメカニックな形状にする
+        const types = ['box', 'tetra'];
         const type = types[Math.floor(Math.random() * types.length)];
         this.scene.remove(this.mesh);
 
         let geometry;
         if (type === 'box') geometry = new THREE.BoxGeometry(radius, radius, radius);
-        else if (type === 'tetra') geometry = new THREE.TetrahedronGeometry(radius);
-        else geometry = new THREE.SphereGeometry(radius, 4, 4);
+        else geometry = new THREE.TetrahedronGeometry(radius);
 
-        this.mesh = new THREE.Mesh(geometry, new THREE.MeshLambertMaterial({ color: color }));
+        this.mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
+            color: color,
+            emissive: color,
+            emissiveIntensity: 2.0
+        }));
         this.mesh.position.copy(position);
         this.scene.add(this.mesh);
 
-        // ランダムな初速と回転
-        const speed = 20 + Math.random() * 30;
+        // ランダムな初速
+        const speed = 40 + Math.random() * 60;
         this.velocity = new THREE.Vector3(
             Math.random() - 0.5,
             Math.random() - 0.5,
@@ -574,27 +605,24 @@ export class Debris extends Entity {
         ).normalize().multiplyScalar(speed);
 
         this.rotationVel = new THREE.Vector3(
-            Math.random() * 10,
-            Math.random() * 10,
-            Math.random() * 10
+            Math.random() * 20,
+            Math.random() * 20,
+            Math.random() * 20
         );
 
-        this.lifeTime = 1.0 + Math.random() * 1.5;
-        this.gravity = new THREE.Vector3(0, -9.8, 0);
+        this.lifeTime = 0.8 + Math.random() * 1.0;
+        this.gravity = new THREE.Vector3(0, -20.0, 0);
     }
 
     update(dt) {
-        this.velocity.addScaledVector(this.gravity, dt); // 重力
+        this.velocity.addScaledVector(this.gravity, dt);
         this.mesh.position.addScaledVector(this.velocity, dt);
         this.mesh.rotation.x += this.rotationVel.x * dt;
         this.mesh.rotation.y += this.rotationVel.y * dt;
         this.mesh.rotation.z += this.rotationVel.z * dt;
 
         this.lifeTime -= dt;
-        if (this.lifeTime < 0.5) {
-            this.mesh.material.transparent = true;
-            this.mesh.material.opacity = this.lifeTime / 0.5;
-        }
+        this.mesh.visible = (Math.floor(this.lifeTime * 30) % 2 === 0);
 
         if (this.lifeTime <= 0) {
             this.remove();

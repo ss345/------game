@@ -23,9 +23,8 @@ export class GameLoop {
 
         // 武器ステータス
         this.isFiring = false;
-        this.vulcanFireRate = 0.1; // 0.1秒間隔 (10Hz)
+        this.vulcanFireRate = 0.006; // 超高速連射 (約167発/秒)
         this.vulcanTimer = 0;
-        this.vulcanAccelTimer = 0; // 加速用タイマー
 
         this.missileAmmo = 10;
         this.maxMissileAmmo = 10;
@@ -57,6 +56,15 @@ export class GameLoop {
 
         this.gameMode = 'missile'; // 'missile' or 'aircraft'
         this.isPlaying = false;
+
+        this.kills = { missile: 0, drone: 0, fighter: 0, helicopter: 0, bomber: 0 };
+        this.killEls = {
+            missile: document.getElementById('kill-missile'),
+            drone: document.getElementById('kill-drone'),
+            fighter: document.getElementById('kill-fighter'),
+            helicopter: document.getElementById('kill-helicopter'),
+            bomber: document.getElementById('kill-bomber')
+        };
 
         // UI要素
         this.scoreEl = document.getElementById('score');
@@ -104,6 +112,17 @@ export class GameLoop {
         this.missileAmmo = this.maxMissileAmmo;
         this.missileReloadTimer = 0;
         this.lockedTargets = [];
+
+        Object.keys(this.kills).forEach(k => {
+            this.kills[k] = 0;
+            if (this.killEls[k]) this.killEls[k].innerText = '0';
+        });
+
+        // 航空機モードなら初期武器をバルカンに固定し、他をロック
+        if (mode === 'aircraft') {
+            this.switchWeapon('vulcan');
+        }
+
         this.clearEntities();
         this.isPlaying = true;
         this.messageOverlay.classList.add('hidden');
@@ -129,6 +148,12 @@ export class GameLoop {
     }
 
     switchWeapon(type) {
+        // 武器のアンロックチェック
+        if (this.gameMode === 'aircraft') {
+            if (type === 'missile' && this.score < 2000) return;
+            if (type === 'laser' && this.score < 10000) return;
+        }
+
         this.weaponType = type;
         document.querySelectorAll('.weapon').forEach(el => el.classList.remove('active'));
         const el = document.getElementById(`weapon-${type}`);
@@ -170,10 +195,7 @@ export class GameLoop {
             switch (this.weaponType) {
                 case 'vulcan':
                     this.vulcanTimer += dt;
-                    this.vulcanAccelTimer += dt;
-                    // 加速ロジック: 4秒かけて 0.1s(10Hz) -> 0.02s(50Hz) まで加速
-                    const dynamicRate = Math.max(0.02, 0.1 - (this.vulcanAccelTimer * 0.02));
-                    if (this.vulcanTimer >= dynamicRate) {
+                    if (this.vulcanTimer >= this.vulcanFireRate) {
                         this.vulcanTimer = 0;
                         this.fireVulcan();
                     }
@@ -333,9 +355,12 @@ export class GameLoop {
             const toEnemy = enemy.mesh.position.clone().sub(this.camera.position).normalize();
             const angle = direction.angleTo(toEnemy);
             if (angle < maxAngle) {
-                this.createExplosion(enemy.mesh.position, enemy.color);
+                const type = enemy.type;
+                const scale = (type === 'bomber' ? 2.5 : 1.0);
+                this.createExplosion(enemy.mesh.position, enemy.color, scale);
                 enemy.remove();
                 this.score += (enemy.type === 'bomber' ? 500 : 50);
+                this.kills[type]++;
                 this.enemiesDestroyedInWave++;
                 hitAny = true;
             }
@@ -368,10 +393,13 @@ export class GameLoop {
                     hit = true;
                     e.health--;
                     if (e.health <= 0) {
-                        this.createExplosion(e.mesh.position, e.color);
+                        const type = e.type;
+                        const scale = (type === 'bomber' ? 2.5 : 1.0);
+                        this.createExplosion(e.mesh.position, e.color, scale);
                         e.remove();
                         this.enemies.splice(j, 1);
-                        this.score += (e.type === 'bomber' ? 500 : 100);
+                        this.score += (type === 'bomber' ? 500 : 100);
+                        this.kills[type]++;
                         this.enemiesDestroyedInWave++;
                         this.checkWaveProgress();
                     } else {
@@ -393,7 +421,8 @@ export class GameLoop {
         for (let i = this.enemies.length - 1; i >= 0; i--) {
             const e = this.enemies[i];
             if (e.impact) {
-                this.createExplosion(e.mesh.position, e.color);
+                const scale = (e.type === 'bomber' ? 2.5 : 1.0);
+                this.createExplosion(e.mesh.position, e.color, scale);
                 this.takeDamage(10);
                 this.enemies.splice(i, 1);
             } else if (e.isDead) {
@@ -442,8 +471,8 @@ export class GameLoop {
 
     spawnEnemy() {
         let type = 'missile';
-        const pos = getRandomHemispherePosition(120);
-        let target = new THREE.Vector3(0, 5, 0); // 地面すれすれではなく少し浮かせる
+        const pos = getRandomHemispherePosition(250); // 250mの遠方から
+        let target = new THREE.Vector3(0, 15, 0); // 地面ではなく安全な高度（15m）を目掛けて飛来させる
         let moveMode = 'direct';
         let patternParams = {};
 
@@ -495,11 +524,11 @@ export class GameLoop {
         this.enemies.push(enemy);
     }
 
-    createExplosion(pos, color = null) {
-        this.explosions.push(new Explosion(this.scene, pos));
+    createExplosion(pos, color = null, scale = 1.0) {
+        this.explosions.push(new Explosion(this.scene, pos, scale));
 
-        // 派手な部品（デブリ）を生成
-        const debrisCount = 10 + Math.floor(Math.random() * 10);
+        // 派手な部品（デブリ）を生成（スケールに合わせて数を増やす）
+        const debrisCount = Math.floor((15 + Math.random() * 15) * scale);
         const debrisColor = color || new THREE.Color(0xffaa00);
         for (let i = 0; i < debrisCount; i++) {
             this.debris.push(new Debris(this.scene, pos, debrisColor));
@@ -546,6 +575,39 @@ export class GameLoop {
         if (this.lockonCountEl) {
             this.lockonCountEl.innerText = `${this.lockedTargets.length} LOCKED`;
             this.lockonCountEl.style.color = this.lockedTargets.length > 0 ? 'red' : 'yellow';
+        }
+
+        // 撃破カウントの表示切り替えと更新
+        const isAircraftMode = this.gameMode === 'aircraft';
+        Object.keys(this.kills).forEach(type => {
+            if (this.killEls[type]) {
+                this.killEls[type].innerText = this.kills[type];
+                const parent = this.killEls[type].parentElement;
+                if (parent) {
+                    if (isAircraftMode) {
+                        parent.style.display = (type === 'fighter' || type === 'helicopter' || type === 'bomber') ? 'flex' : 'none';
+                    } else {
+                        parent.style.display = (type === 'missile' || type === 'drone') ? 'flex' : 'none';
+                    }
+                }
+            }
+        });
+
+        // 武器のアンロック表示（航空機モード）
+        if (this.gameMode === 'aircraft') {
+            const missileBtn = document.getElementById('weapon-missile');
+            const laserBtn = document.getElementById('weapon-laser');
+            if (missileBtn) {
+                if (this.score >= 2000) missileBtn.classList.remove('locked');
+                else missileBtn.classList.add('locked');
+            }
+            if (laserBtn) {
+                if (this.score >= 10000) laserBtn.classList.remove('locked');
+                else laserBtn.classList.add('locked');
+            }
+        } else {
+            document.getElementById('weapon-missile')?.classList.remove('locked');
+            document.getElementById('weapon-laser')?.classList.remove('locked');
         }
 
         // レーザーUI
