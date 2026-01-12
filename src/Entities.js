@@ -349,6 +349,10 @@ export class Enemy extends Entity {
         this.m197BurstTimer = 0;
         this.isFiringM197 = false;
         this.canFireGround = false; // 大編隊（イベント）時のみ許可するためのフラグ
+
+        // ミサイル発射タイマー (戦闘機イベント用)
+        this.missileFireTimer = Math.random() * 5.0 + 2.0; // 出現してから2~7秒後に発射
+        this.canFireMissile = false;
     }
 
     createLockonMarker() {
@@ -553,6 +557,16 @@ export class Enemy extends Entity {
         if (this.type === 'helicopter' && !this.isDead && this.canFireGround) {
             this.updateM197(dt);
         }
+
+        // 戦闘機のミサイル発射ロジック（イベント機のみ）
+        if (this.type === 'fighter' && !this.isDead && this.canFireMissile) {
+            this.missileFireTimer -= dt;
+            if (this.missileFireTimer <= 0) {
+                this.fireMissile();
+                // 再発射までの間隔（かなり長めにするか、1回きりにするか。ここでは長めのインターバルを設定）
+                this.missileFireTimer = 15.0 + Math.random() * 10.0;
+            }
+        }
     }
 
     updateM197(dt) {
@@ -597,6 +611,32 @@ export class Enemy extends Entity {
         bullet.velocity = dir.clone().multiplyScalar(bullet.speed);
 
         if (this._aaCallback) this._aaCallback(bullet);
+    }
+
+    fireMissile() {
+        // 前方にミサイルを発射
+        const offset = new THREE.Vector3(0, -0.5, 1.0); // 機体下部から
+        offset.applyQuaternion(this.mesh.quaternion);
+        const spawnPos = this.mesh.position.clone().add(offset);
+
+        // ターゲットはプレイヤー（カメラ位置周辺）へ向かうように
+        // カメラ位置はupdateで渡されていないため、z正方向（手前）に向かうベクトルとする
+        const targetPos = new THREE.Vector3(
+            this.mesh.position.x * 0.5, // 少し中央に寄る
+            10, // 高度10m付近
+            500 // プレイヤーの後方へ
+        );
+
+        if (this._spawnEnemyCallback) {
+            // ミサイル敵を生成
+            // scene, position, targetPos, type, movementMode
+            const missile = new Enemy(this.scene, spawnPos, targetPos, 'missile', 'direct');
+            missile.speed = 40; // 通常ミサイルより高速
+            missile.velocity = targetPos.clone().sub(spawnPos).normalize().multiplyScalar(missile.speed);
+            missile.mesh.lookAt(targetPos);
+
+            this._spawnEnemyCallback(missile);
+        }
     }
 
     dropBomb(flares = []) {

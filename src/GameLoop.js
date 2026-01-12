@@ -67,6 +67,11 @@ export class GameLoop {
         this.heliEventCount = 0;
         this.heliEventTimer = 0;
 
+        // 戦闘機大編隊イベント用フラグ
+        this.fighterEventTriggered = false;
+        this.fighterEventCount = 0;
+        this.fighterEventTimer = 0;
+
         this.kills = { missile: 0, drone: 0, fighter: 0, helicopter: 0, bomber: 0 };
         this.killEls = {
             missile: document.getElementById('kill-missile'),
@@ -131,6 +136,10 @@ export class GameLoop {
         this.heliEventTriggered = false;
         this.heliEventCount = 0;
         this.heliEventTimer = 0;
+
+        this.fighterEventTriggered = false;
+        this.fighterEventCount = 0;
+        this.fighterEventTimer = 0;
 
         Object.keys(this.kills).forEach(k => {
             this.kills[k] = 0;
@@ -678,6 +687,14 @@ export class GameLoop {
             console.log("HELICOPTER ASSAULT EVENT: 100 ATTACK HELICOPTERS APPROACHING!");
         }
 
+        // 戦闘機大編隊イベント
+        if (this.gameMode === 'aircraft' && this.score >= 350000 && !this.fighterEventTriggered) {
+            this.fighterEventTriggered = true;
+            this.fighterEventCount = 100;
+            this.fighterEventTimer = 0;
+            console.log("FIGHTER ASSAULT EVENT: 100 FIGHTERS LAUNCHING MISSILES!");
+        }
+
         // 絨毯爆撃の逐次生成
         if (this.carpetBombingCount > 0) {
             this.carpetBombingTimer -= dt;
@@ -695,6 +712,16 @@ export class GameLoop {
                 this.spawnEventHelicopter();
                 this.heliEventCount--;
                 this.heliEventTimer = 0.2; // 少し間隔を開ける
+            }
+        }
+
+        // 戦闘機の逐次生成
+        if (this.fighterEventCount > 0) {
+            this.fighterEventTimer -= dt;
+            if (this.fighterEventTimer <= 0) {
+                this.spawnEventFighter();
+                this.fighterEventCount--;
+                this.fighterEventTimer = 0.15; // 高速で次々と
             }
         }
     }
@@ -730,6 +757,26 @@ export class GameLoop {
         enemy.speed = 15; // じわじわ接近
         enemy.canFireGround = true; // イベント機のみ射撃許可
         enemy._aaCallback = (bullet) => this.ambientAA.push(bullet);
+        this.enemies.push(enemy);
+    }
+
+    spawnEventFighter() {
+        const spreadX = 800; // 広範囲から
+        const x = (Math.random() - 0.5) * spreadX;
+        const y = 50 + Math.random() * 40; // 中〜高空
+        const z = -600; // 遠方から
+
+        const pos = new THREE.Vector3(x, y, z);
+        const target = new THREE.Vector3(x * 0.5, y, 600); // 高速で通過
+
+        const enemy = new Enemy(this.scene, pos, target, 'fighter', 'direct');
+        enemy.speed = 30; // 高速
+        enemy.canFireMissile = true; // ミサイル発射許可
+        // ミサイル生成コールバック：GameLoopのenemies配列に追加する
+        enemy._spawnEnemyCallback = (missile) => {
+            this.enemies.push(missile);
+            // 音を鳴らすなどの演出があればここに追加
+        };
         this.enemies.push(enemy);
     }
 }
