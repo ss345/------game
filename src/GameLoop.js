@@ -62,6 +62,11 @@ export class GameLoop {
         this.carpetBombingCount = 0;
         this.carpetBombingTimer = 0;
 
+        // ヘリ大編隊イベント用フラグ
+        this.heliEventTriggered = false;
+        this.heliEventCount = 0;
+        this.heliEventTimer = 0;
+
         this.kills = { missile: 0, drone: 0, fighter: 0, helicopter: 0, bomber: 0 };
         this.killEls = {
             missile: document.getElementById('kill-missile'),
@@ -122,6 +127,10 @@ export class GameLoop {
         this.carpetBombingTriggered = false;
         this.carpetBombingCount = 0;
         this.carpetBombingTimer = 0;
+
+        this.heliEventTriggered = false;
+        this.heliEventCount = 0;
+        this.heliEventTimer = 0;
 
         Object.keys(this.kills).forEach(k => {
             this.kills[k] = 0;
@@ -289,7 +298,7 @@ export class GameLoop {
 
         // 更新
         this.projectiles.forEach(p => p.update(dt));
-        this.enemies.forEach(e => e.update(dt, this.camera, this.flares));
+        this.enemies.forEach(e => e.update(dt, this.camera, this.flares, this.ambientAA));
         this.explosions.forEach(e => e.update(dt));
         this.debris.forEach(d => d.update(dt));
 
@@ -653,7 +662,7 @@ export class GameLoop {
     }
 
     checkEvents(dt) {
-        // スコア5000で爆撃機500機の絨毯爆撃イベント（航空機モード限定）
+        // 爆撃機イベント
         if (this.gameMode === 'aircraft' && this.score >= 10000 && !this.carpetBombingTriggered) {
             this.carpetBombingTriggered = true;
             this.carpetBombingCount = 500;
@@ -661,13 +670,31 @@ export class GameLoop {
             console.log("CARPET BOMBING EVENT: 500 BOMBERS APPROACHING!");
         }
 
-        // 0.05秒間隔で1機ずつ出現させ、負荷を抑えて500機出す
+        // ヘリ大編隊イベント
+        if (this.gameMode === 'aircraft' && this.score >= 300000 && !this.heliEventTriggered) {
+            this.heliEventTriggered = true;
+            this.heliEventCount = 100;
+            this.heliEventTimer = 0;
+            console.log("HELICOPTER ASSAULT EVENT: 100 ATTACK HELICOPTERS APPROACHING!");
+        }
+
+        // 絨毯爆撃の逐次生成
         if (this.carpetBombingCount > 0) {
             this.carpetBombingTimer -= dt;
             if (this.carpetBombingTimer <= 0) {
                 this.spawnEventBomber();
                 this.carpetBombingCount--;
                 this.carpetBombingTimer = 0.05;
+            }
+        }
+
+        // ヘリの逐次生成
+        if (this.heliEventCount > 0) {
+            this.heliEventTimer -= dt;
+            if (this.heliEventTimer <= 0) {
+                this.spawnEventHelicopter();
+                this.heliEventCount--;
+                this.heliEventTimer = 0.2; // 少し間隔を開ける
             }
         }
     }
@@ -685,6 +712,24 @@ export class GameLoop {
 
         const enemy = new Enemy(this.scene, pos, target, 'bomber', 'direct');
         enemy.health = 1; // ボーナス機
+        enemy._aaCallback = (bullet) => this.ambientAA.push(bullet);
+        this.enemies.push(enemy);
+    }
+
+    spawnEventHelicopter() {
+        const spreadX = 600;
+        const x = (Math.random() - 0.5) * spreadX;
+        const y = 30 + Math.random() * 20; // 爆撃機より低空
+        const z = -400;
+
+        const pos = new THREE.Vector3(x, y, z);
+        const target = new THREE.Vector3(x * 0.8, y, 600); // 通り過ぎる
+
+        const enemy = new Enemy(this.scene, pos, target, 'helicopter', 'direct');
+        enemy.health = 2; // ヘリは少し硬め
+        enemy.speed = 15; // じわじわ接近
+        enemy.canFireGround = true; // イベント機のみ射撃許可
+        enemy._aaCallback = (bullet) => this.ambientAA.push(bullet);
         this.enemies.push(enemy);
     }
 }

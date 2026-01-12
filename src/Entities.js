@@ -343,6 +343,12 @@ export class Enemy extends Entity {
 
         // 爆撃タイマー
         this.bombTimer = Math.random() * 2.0;
+
+        // M197 20mm 機関砲タイマー (ヘリ用)
+        this.m197Timer = Math.random() * 1.0;
+        this.m197BurstTimer = 0;
+        this.isFiringM197 = false;
+        this.canFireGround = false; // 大編隊（イベント）時のみ許可するためのフラグ
     }
 
     createLockonMarker() {
@@ -538,10 +544,59 @@ export class Enemy extends Entity {
         if (this.type === 'bomber' && !this.isDead && this.movementMode === 'direct') {
             this.bombTimer -= dt;
             if (this.bombTimer <= 0) {
-                this.dropBomb(flares);
+                this.dropBomb(this.scene.parent?.flares); // flares配列にアクセスできるよう調整が必要な場合があるが一旦引数で対応
                 this.bombTimer = 0.5 + Math.random() * 1.5;
             }
         }
+
+        // ヘリコプターのM197射撃ロジック
+        if (this.type === 'helicopter' && !this.isDead && this.canFireGround) {
+            this.updateM197(dt);
+        }
+    }
+
+    updateM197(dt) {
+        if (this.isFiringM197) {
+            this.m197BurstTimer -= dt;
+            this.m197Timer -= dt;
+            if (this.m197Timer <= 0) {
+                this.fireM197();
+                this.m197Timer = 0.05; // 超高速連射
+            }
+            if (this.m197BurstTimer <= 0) {
+                this.isFiringM197 = false;
+                this.m197Timer = 2.0 + Math.random() * 3.0; // 次のバーストまで待機
+            }
+        } else {
+            this.m197Timer -= dt;
+            if (this.m197Timer <= 0) {
+                this.isFiringM197 = true;
+                this.m197BurstTimer = 1.0 + Math.random() * 1.5; // 1-1.5秒間の連射
+            }
+        }
+    }
+
+    fireM197() {
+        // 真下の地上 (y=0) に向けて発射
+        // 少し前方に散らす
+        const fireOrigin = this.mesh.position.clone().add(new THREE.Vector3(0, -1, 1));
+        const groundTarget = this.mesh.position.clone();
+        groundTarget.y = 0;
+        groundTarget.z += 20 + Math.random() * 50; // 少し前方の地面を掃射
+        groundTarget.x += (Math.random() - 0.5) * 15;
+
+        const dir = groundTarget.sub(fireOrigin).normalize();
+
+        // AmbientAAFireを流用して黄色の連射弾を作成
+        const bullet = new AmbientAAFire(this.scene, fireOrigin, dir);
+        bullet.mesh.material.color.setHex(0xffff66); // よりはっきりした黄色
+        // 視認性向上のためにスケールをセット（AmbientAAFire.updateでベーススケールが使われるように変更済み）
+        bullet.baseScale = new THREE.Vector3(0.8, 0.8, 3.0);
+        bullet.mesh.scale.copy(bullet.baseScale);
+        bullet.speed = 150; // 速度を大幅に下げて弾筋が見えるようにする
+        bullet.velocity = dir.clone().multiplyScalar(bullet.speed);
+
+        if (this._aaCallback) this._aaCallback(bullet);
     }
 
     dropBomb(flares = []) {
@@ -670,7 +725,8 @@ export class AmbientAAFire extends Entity {
         this.mesh.material.opacity = 1.0;
 
         // 球体ベースの形状を少しだけ進行方向に伸ばして弾丸らしくする
-        this.mesh.scale.set(0.6, 0.6, 1.2);
+        this.baseScale = new THREE.Vector3(0.6, 0.6, 1.2);
+        this.mesh.scale.copy(this.baseScale);
         this.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), direction.normalize());
     }
 
@@ -679,9 +735,12 @@ export class AmbientAAFire extends Entity {
         this.lifeTime -= dt;
 
         // 飛翔距離に応じて徐々に小さくする (遠近感)
-        // 1.0 -> 0.1 まで縮小
-        const scaleFactor = Math.max(0.1, this.lifeTime / 3.5);
-        this.mesh.scale.set(0.6 * scaleFactor, 0.6 * scaleFactor, 1.2 * scaleFactor);
+        const scaleFactor = Math.max(0.2, this.lifeTime / 3.5);
+        this.mesh.scale.set(
+            this.baseScale.x * scaleFactor,
+            this.baseScale.y * scaleFactor,
+            this.baseScale.z * scaleFactor
+        );
 
         // 最後の0.3秒で急速にフェードアウト
         if (this.lifeTime < 0.3) {
