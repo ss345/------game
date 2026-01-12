@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Projectile, Enemy, Explosion, Debris, AmbientAAFire } from './Entities.js';
+import { Projectile, Enemy, Explosion, Debris, AmbientAAFire, Flare } from './Entities.js';
 import { getRandomHemispherePosition, checkCollision } from './Utils.js';
 import { Radar } from './Radar.js';
 import { audioManager } from './AudioManager.js';
@@ -14,6 +14,7 @@ export class GameLoop {
         this.explosions = [];
         this.debris = [];
         this.ambientAA = [];
+        this.flares = [];
 
         this.score = 0;
         this.wave = 1;
@@ -117,12 +118,13 @@ export class GameLoop {
     }
 
     clearEntities() {
-        [...this.projectiles, ...this.enemies, ...this.explosions, ...this.debris, ...this.ambientAA].forEach(e => e.remove());
+        [...this.projectiles, ...this.enemies, ...this.explosions, ...this.debris, ...this.ambientAA, ...this.flares].forEach(e => e.remove());
         this.projectiles = [];
         this.enemies = [];
         this.explosions = [];
         this.debris = [];
         this.ambientAA = [];
+        this.flares = [];
         this.laserBeam.visible = false;
     }
 
@@ -252,9 +254,15 @@ export class GameLoop {
 
         // 更新
         this.projectiles.forEach(p => p.update(dt));
-        this.enemies.forEach(e => e.update(dt, this.camera));
+        this.enemies.forEach(e => e.update(dt, this.camera, this.flares));
         this.explosions.forEach(e => e.update(dt));
         this.debris.forEach(d => d.update(dt));
+
+        // フレア更新
+        this.flares.forEach(f => f.update(dt));
+        for (let i = this.flares.length - 1; i >= 0; i--) {
+            if (this.flares[i].isDead) this.flares.splice(i, 1);
+        }
 
         // 判定
         this.handleCollisions();

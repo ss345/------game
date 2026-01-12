@@ -1,5 +1,9 @@
 import * as THREE from 'three';
 
+// ========== 共有リソース（GC負荷軽減） ==========
+const flareGeometry = new THREE.SphereGeometry(0.3, 4, 4);
+const flareMaterial = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
+
 /**
  * 基本エンティティクラス
  */
@@ -60,6 +64,9 @@ export class Projectile extends Entity {
 
     update(dt) {
         if (this.type === 'missile' && this.target && !this.target.isDead) {
+            // フレームカウンター初期化（初回のみ）
+            this._frameCounter = (this._frameCounter || 0) + 1;
+
             // ホーミングロジック
             const desiredDir = this.target.mesh.position.clone().sub(this.mesh.position).normalize();
             // 現在の速度ベクトルから目標ベクトルへ徐々に回転させる (旋回性能)
@@ -67,6 +74,15 @@ export class Projectile extends Entity {
             const currentDir = this.velocity.clone().normalize();
             currentDir.lerp(desiredDir, turnFactor).normalize();
             this.velocity.copy(currentDir.multiplyScalar(this.speed));
+
+            // 2フレームに1回、距離チェックとターゲットへの警告（負荷軽減）
+            if (this._frameCounter % 2 === 0) {
+                const distSq = this.mesh.position.distanceToSquared(this.target.mesh.position);
+                // 100m以内に接近したらターゲットに警告
+                if (distSq < 10000 && this.target.warnMissile) {
+                    this.target.warnMissile(this.mesh.position);
+                }
+            }
 
             // 進行方向を向かせる
             const lookTarget = this.mesh.position.clone().add(this.velocity);
@@ -311,6 +327,13 @@ export class Enemy extends Entity {
         this.lockonMarker = this.createLockonMarker();
         this.lockonMarker.visible = false;
         this.mesh.add(this.lockonMarker);
+
+        // 回避行動・フレア関連のプロパティ
+        this.isEvading = false;
+        this.evasionTimer = 0;
+        this.evasionVelocity = new THREE.Vector3();
+        this.flareTimer = 0;
+        this.originalSpeed = speed;
     }
 
     createLockonMarker() {
@@ -329,31 +352,107 @@ export class Enemy extends Entity {
         this.lockonMarker.visible = isLocked;
     }
 
-    update(dt, camera) {
+    /**
+     * ミサイルからの接近警告を受信
+     * @param {THREE.Vector3} missilePos - ミサイルの位置
+     */
+    warnMissile(missilePos) {
+        // ミサイル・ドローンは回避しない
+        if (this.type === 'missile' || this.type === 'drone') return;
+        // 既に回避中なら無視
+        if (this.isEvading) return;
+
+        this.triggerEvasion(missilePos);
+    }
+
+    /**
+     * 回避行動を開始
+     * @param {THREE.Vector3} threatPos - 脅威（ミサイル）の位置
+     */
+    triggerEvasion(threatPos) {
+        this.isEvading = true;
+        this.evasionTimer = 3.0; // 3秒間回避行動
+        this.flareTimer = 0; // フレア放出をすぐ開始
+
+        // 速度ベクトルが0に近い場合のフォールバック
+        if (!this.velocity || this.velocity.lengthSq() < 0.001) {
+            this.velocity = new THREE.Vector3(0, 0, 1);
+        }
+
+        // 脅威と逆方向へ急旋回するためのベクトル計算
+        const awayFromThreat = this.mesh.position.clone().sub(threatPos).normalize();
+        const up = new THREE.Vector3(0, 1, 0);
+        let right = new THREE.Vector3().crossVectors(this.velocity.clone().normalize(), up).normalize();
+
+        // rightが0になる場合のフォールバック
+        if (right.lengthSq() < 0.001) {
+            right = new THREE.Vector3(1, 0, 0);
+        }
+
+        // ランダムに左右・上下へ回避方向を決定
+        const evadeDir = right.multiplyScalar(Math.random() < 0.5 ? 1 : -1)
+            .add(up.clone().multiplyScalar(Math.random() * 0.5)) // 少し上昇
+            .add(awayFromThreat)
+            .normalize();
+
+        // 速度は変更せず、方向のみ変更
+        this.evasionVelocity = evadeDir.multiplyScalar(this.originalSpeed);
+    }
+
+    update(dt, camera, flares = []) {
         this.time += dt;
 
-        if (this.movementMode === 'direct' || this.movementMode === 'flyby' || this.movementMode === 'crossing') {
+        // ===== 回避行動とフレア放出 =====
+        if (this.isEvading) {
+            this.evasionTimer -= dt;
+
+            // フレア放出（0.5秒間隔、負荷軽減のため）
+            this.flareTimer -= dt;
+            if (this.flareTimer <= 0 && flares) {
+                const flare = Flare.spawn(this.scene, this.mesh.position.clone());
+                if (flare) {
+                    flares.push(flare);
+                }
+                this.flareTimer = 0.5; // 0.5秒間隔
+            }
+
+            // 回避方向への移動（滑らかに方向転換）
+            this.velocity.lerp(this.evasionVelocity, dt * 3.0);
             this.mesh.position.addScaledVector(this.velocity, dt);
 
-            // 目的地に到達したか（Directのみ拠点を攻撃）
-            if (this.mesh.position.distanceTo(this.targetPos) < 2.0) {
-                if (this.movementMode === 'direct') {
-                    this.impact = true;
-                }
-                this.remove(); // 画面外へ消える設定
+            // 進行方向を向く
+            const lookTarget = this.mesh.position.clone().add(this.velocity);
+            this.mesh.lookAt(lookTarget);
+
+            // 回避終了判定
+            if (this.evasionTimer <= 0) {
+                this.isEvading = false;
             }
-        } else if (this.movementMode === 'orbit') {
-            this.angle += this.orbitSpeed * dt;
-            const newX = this.orbitCenter.x + Math.cos(this.angle) * this.orbitRadius;
-            const newZ = this.orbitCenter.z + Math.sin(this.angle) * this.orbitRadius;
+        } else {
+            // ===== 通常の移動ロジック =====
+            if (this.movementMode === 'direct' || this.movementMode === 'flyby' || this.movementMode === 'crossing') {
+                this.mesh.position.addScaledVector(this.velocity, dt);
 
-            // 前のフレームの位置から向きを計算
-            const nextPos = new THREE.Vector3(newX, this.mesh.position.y, newZ);
-            this.mesh.lookAt(nextPos);
-            this.mesh.position.copy(nextPos);
+                // 目的地に到達したか（Directのみ拠点を攻撃）
+                if (this.mesh.position.distanceTo(this.targetPos) < 2.0) {
+                    if (this.movementMode === 'direct') {
+                        this.impact = true;
+                    }
+                    this.remove(); // 画面外へ消える設定
+                }
+            } else if (this.movementMode === 'orbit') {
+                this.angle += this.orbitSpeed * dt;
+                const newX = this.orbitCenter.x + Math.cos(this.angle) * this.orbitRadius;
+                const newZ = this.orbitCenter.z + Math.sin(this.angle) * this.orbitRadius;
 
-            // 旋回は時間経過で消える（一旦30秒）
-            if (this.time > 30) this.remove();
+                // 前のフレームの位置から向きを計算
+                const nextPos = new THREE.Vector3(newX, this.mesh.position.y, newZ);
+                this.mesh.lookAt(nextPos);
+                this.mesh.position.copy(nextPos);
+
+                // 旋回は時間経過で消える（一旦30秒）
+                if (this.time > 30) this.remove();
+            }
         }
 
         // ヘリコのローター回転
@@ -539,5 +638,81 @@ export class AmbientAAFire extends Entity {
         if (this.lifeTime <= 0) {
             this.remove();
         }
+    }
+}
+
+/**
+ * フレア（欺瞞弾）- オブジェクトプーリング対応
+ */
+export class Flare extends Entity {
+    static pool = [];
+    static MAX_FLARES = 50; // フリーズ対策：最大数制限
+
+    constructor(scene, position) {
+        super(scene, position, 0xffaa00, 0.3);
+
+        // 共有リソースを使用（GC負荷軽減）
+        if (this.mesh.geometry) this.mesh.geometry.dispose();
+        if (this.mesh.material) this.mesh.material.dispose();
+        this.mesh.geometry = flareGeometry;
+        this.mesh.material = flareMaterial;
+
+        this.init(position);
+    }
+
+    init(position) {
+        this.mesh.position.copy(position);
+        this.mesh.visible = true;
+        this.isDead = false;
+        this.scene.add(this.mesh);
+
+        // 落下速度と拡散
+        this.velocity = new THREE.Vector3(
+            (Math.random() - 0.5) * 5,  // 横方向への拡散
+            -5 - Math.random() * 5,     // 下方向（重力）
+            (Math.random() - 0.5) * 5   // 前後方向への拡散
+        );
+
+        this.lifeTime = 2.0 + Math.random() * 1.0;
+    }
+
+    static spawn(scene, position) {
+        // フレア数制限（フリーズ対策）
+        if (this.pool.length === 0 && scene.children.filter(c => c.userData?.isFlare).length >= this.MAX_FLARES) {
+            return null;
+        }
+
+        if (this.pool.length > 0) {
+            const f = this.pool.pop();
+            f.init(position);
+            return f;
+        } else {
+            const flare = new Flare(scene, position);
+            flare.mesh.userData.isFlare = true;
+            return flare;
+        }
+    }
+
+    update(dt) {
+        this.velocity.y -= 9.8 * dt; // 重力加速
+        this.mesh.position.addScaledVector(this.velocity, dt);
+
+        this.lifeTime -= dt;
+        if (this.lifeTime < 0.5) {
+            // 点滅しながら消える演出
+            this.mesh.visible = Math.floor(this.lifeTime * 20) % 2 === 0;
+        }
+
+        if (this.lifeTime <= 0) {
+            this.remove();
+        }
+    }
+
+    remove() {
+        // プールに戻す（disposeしない）
+        this.isDead = true;
+        this.mesh.visible = false;
+        this.scene.remove(this.mesh);
+        Flare.pool.push(this);
     }
 }
