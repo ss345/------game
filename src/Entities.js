@@ -545,10 +545,10 @@ export class Enemy extends Entity {
         }
 
         // 爆撃機の爆撃ロジック
-        if (this.type === 'bomber' && !this.isDead && this.movementMode === 'direct') {
+        if (this.type === 'bomber' && !this.isDead && (this.movementMode === 'direct' || this.canDropBomb)) {
             this.bombTimer -= dt;
             if (this.bombTimer <= 0) {
-                this.dropBomb(this.scene.parent?.flares); // flares配列にアクセスできるよう調整が必要な場合があるが一旦引数で対応
+                this.dropBomb(flares); // 正しい引数を使用
                 this.bombTimer = 0.5 + Math.random() * 1.5;
             }
         }

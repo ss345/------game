@@ -40,6 +40,7 @@ export class GameLoop {
         this.laserCooldownTimer = 0;
         this.maxLaserHeat = 5.0;
         this.laserCooldownTime = 20.0;
+        this.laserUnlimited = false; // レーザー無制限モードフラグ
 
         // 難易度設定
         this.spawnTimer = 0;
@@ -72,6 +73,10 @@ export class GameLoop {
         this.fighterEventCount = 0;
         this.fighterEventTimer = 0;
 
+        // 総攻撃モード用フラグ
+        this.allOutAttackMode = false;
+        this.allOutAttackSequenceStarted = false; // シーケンス制御用
+
         this.kills = { missile: 0, drone: 0, fighter: 0, helicopter: 0, bomber: 0 };
         this.killEls = {
             missile: document.getElementById('kill-missile'),
@@ -97,7 +102,86 @@ export class GameLoop {
 
         this.radar = new Radar('radar-container', this);
         this.setupLaserEffect();
+        this.setupAATanks();
         this.bindEvents();
+    }
+
+    setupAATanks() {
+        const bodyGeo = new THREE.BoxGeometry(4, 1.8, 6);
+        const bodyMat = new THREE.MeshStandardMaterial({ color: 0x556b2f, flatShading: true }); // オリーブドラブ
+
+        const trackGeo = new THREE.BoxGeometry(0.8, 1.8, 6.2);
+        const trackMat = new THREE.MeshStandardMaterial({ color: 0x333333, flatShading: true });
+
+        const turretGeo = new THREE.BoxGeometry(3, 1.5, 4);
+        const turretMat = new THREE.MeshStandardMaterial({ color: 0x6b8e23, flatShading: true });
+
+        const barrelGeo = new THREE.CylinderGeometry(0.15, 0.15, 5);
+        const barrelMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+
+        const radarGeo = new THREE.CylinderGeometry(0.8, 0.8, 0.5, 8);
+        const radarMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+
+        this.aaBatteries.forEach(battery => {
+            const tank = new THREE.Group();
+
+            // 車体
+            const body = new THREE.Mesh(bodyGeo, bodyMat);
+            body.position.y = 1.4; // コリジョン回避のため少し浮かすか、車輪分上げる
+            tank.add(body);
+
+            // 履帯（左右）
+            const leftTrack = new THREE.Mesh(trackGeo, trackMat);
+            leftTrack.position.set(-2.2, 0.9, 0);
+            tank.add(leftTrack);
+
+            const rightTrack = new THREE.Mesh(trackGeo, trackMat);
+            rightTrack.position.set(2.2, 0.9, 0);
+            tank.add(rightTrack);
+
+            // 砲塔（回転する部分）
+            const turretGroup = new THREE.Group();
+            turretGroup.position.set(0, 2.3, 0);
+            tank.add(turretGroup);
+
+            const turret = new THREE.Mesh(turretGeo, turretMat);
+            turretGroup.add(turret);
+
+            // 探索レーダー（砲塔後部で回転）
+            const radar = new THREE.Mesh(radarGeo, radarMat);
+            radar.rotation.x = Math.PI / 2;
+            radar.position.set(0, 1.0, 1.5);
+            turretGroup.add(radar);
+
+            // 砲身（2連装、上向き）
+            // battery.dirの仰角に合わせて回転させるのは少し計算が必要なので、固定の仰角をつける
+            // (簡易的に45度)
+            const barrelGroup = new THREE.Group();
+            barrelGroup.rotation.x = -Math.PI / 4; // 上向く
+            barrelGroup.position.set(0, 0.5, 1.5); // 砲塔の前方
+            turretGroup.add(barrelGroup);
+
+            const barrel1 = new THREE.Mesh(barrelGeo, barrelMat);
+            barrel1.rotation.x = Math.PI / 2; // CylinderはY軸向きなのでZ軸へ倒す
+            barrel1.position.set(-0.8, 0, 2.5);
+            barrelGroup.add(barrel1);
+
+            const barrel2 = new THREE.Mesh(barrelGeo, barrelMat);
+            barrel2.rotation.x = Math.PI / 2;
+            barrel2.position.set(0.8, 0, 2.5);
+            barrelGroup.add(barrel2);
+
+            // 配置
+            tank.position.copy(battery.pos);
+
+            // 向きの設定：砲身が射撃方向を向くように調整
+            // battery.dir の水平成分を取り出して戦車を向ける
+            const lookPos = battery.pos.clone().add(new THREE.Vector3(battery.dir.x, 0, battery.dir.z));
+            tank.lookAt(lookPos);
+
+            // 砲塔を少しだけランダムに揺らしたりもできるが、今回は固定
+            this.scene.add(tank);
+        });
     }
 
     setupLaserEffect() {
@@ -141,6 +225,9 @@ export class GameLoop {
         this.fighterEventCount = 0;
         this.fighterEventTimer = 0;
 
+        this.allOutAttackMode = false;
+        this.allOutAttackSequenceStarted = false;
+
         Object.keys(this.kills).forEach(k => {
             this.kills[k] = 0;
             if (this.killEls[k]) this.killEls[k].innerText = '0';
@@ -150,6 +237,8 @@ export class GameLoop {
         if (mode === 'aircraft') {
             this.switchWeapon('vulcan');
         }
+
+        this.laserUnlimited = false; // リセット
 
         this.clearEntities();
         this.isPlaying = true;
@@ -237,12 +326,18 @@ export class GameLoop {
                 case 'laser':
                     if (!this.laserOverheated) {
                         this.updateLaser(dt);
-                        this.laserHeat = Math.min(this.maxLaserHeat, this.laserHeat + dt);
-                        if (this.laserHeat >= this.maxLaserHeat) {
-                            console.log("Laser OVERHEAT!");
-                            this.laserOverheated = true;
-                            this.laserCooldownTimer = this.laserCooldownTime;
-                            if (this.laserBeam) this.laserBeam.visible = false;
+                        // 無制限モードならヒートアップしない
+                        if (!this.laserUnlimited) {
+                            this.laserHeat = Math.min(this.maxLaserHeat, this.laserHeat + dt);
+                            if (this.laserHeat >= this.maxLaserHeat) {
+                                console.log("Laser OVERHEAT!");
+                                this.laserOverheated = true;
+                                this.laserCooldownTimer = this.laserCooldownTime;
+                                if (this.laserBeam) this.laserBeam.visible = false;
+                            }
+                        } else {
+                            // 無制限中はヒートゲージを0に保つ
+                            this.laserHeat = 0;
                         }
                     } else {
                         if (this.laserBeam) this.laserBeam.visible = false;
@@ -267,13 +362,15 @@ export class GameLoop {
             }
         }
 
-        // 演出：地対空射撃 (CIWS)
+        // 演出：地対空射撃 (CIWS / 対空戦車)
         this.aaBatteries.forEach(battery => {
             battery.timer -= dt;
             if (battery.firing) {
                 battery.burstTimer -= dt;
                 if (battery.timer <= 0) {
-                    this.ambientAA.push(new AmbientAAFire(this.scene, battery.pos, battery.dir));
+                    // 戦車の砲身付近から発射するように位置を調整 (高さ3.5m)
+                    const firePos = battery.pos.clone().add(new THREE.Vector3(0, 3.5, 0));
+                    this.ambientAA.push(new AmbientAAFire(this.scene, firePos, battery.dir));
                     battery.timer = 0.05; // 0.05秒間隔の超高速連射
                 }
                 if (battery.burstTimer <= 0) {
@@ -449,7 +546,35 @@ export class GameLoop {
             }
         }
 
-        // 敵の直撃
+        // 敵の対空砲火(AmbientAA) vs プレイヤー
+        // プレイヤーの当たり判定半径を 2.0 程度(4m)とする
+        const playerRadiusSq = 2.0 * 2.0;
+        for (let i = this.ambientAA.length - 1; i >= 0; i--) {
+            const aa = this.ambientAA[i];
+            if (aa.mesh.position.distanceToSquared(this.camera.position) < playerRadiusSq) {
+                this.takeDamage(5); // 1発5ダメージ
+                this.createExplosion(this.camera.position.clone().add(new THREE.Vector3(0, 0, -2)), 0xff0000, 0.5); // 画面の手前で爆発
+                aa.remove();
+                this.ambientAA.splice(i, 1);
+            }
+        }
+
+        // 敵ミサイル(Enemy) vs プレイヤー
+        // 通常のEnemy.updateでのimpact判定とは別に、距離判定でダメージを与える（すり抜け防止）
+        for (let i = this.enemies.length - 1; i >= 0; i--) {
+            const e = this.enemies[i];
+            if ((e.type === 'missile' || e.type === 'drone') && !e.isDead) {
+                if (e.mesh.position.distanceToSquared(this.camera.position) < playerRadiusSq) {
+                    this.takeDamage(10);
+                    this.createExplosion(e.mesh.position, e.color, 1.0);
+                    e.remove();
+                    this.enemies.splice(i, 1);
+                    continue; // removeしたので次へ
+                }
+            }
+        }
+
+        // 敵の直撃（既存ロジック）
         for (let i = this.enemies.length - 1; i >= 0; i--) {
             const e = this.enemies[i];
             if (e.impact) {
@@ -553,6 +678,24 @@ export class GameLoop {
         }
 
         const enemy = new Enemy(this.scene, pos, target, type, moveMode, patternParams);
+
+        // 総攻撃モードなら全員攻撃許可
+        if (this.allOutAttackMode) {
+            enemy.canFireGround = true;   // ヘリ
+            enemy.canFireMissile = true;  // 戦闘機
+            enemy.canDropBomb = true;     // 爆撃機
+
+            // ミサイル発射コールバック設定
+            if (type === 'fighter') {
+                enemy._spawnEnemyCallback = (missile) => {
+                    this.enemies.push(missile);
+                };
+            }
+        }
+
+        // ヘリや爆撃機へのAAコールバックは共通で必要
+        enemy._aaCallback = (bullet) => this.ambientAA.push(bullet);
+
         this.enemies.push(enemy);
     }
 
@@ -693,6 +836,78 @@ export class GameLoop {
             this.fighterEventCount = 100;
             this.fighterEventTimer = 0;
             console.log("FIGHTER ASSAULT EVENT: 100 FIGHTERS LAUNCHING MISSILES!");
+        }
+
+        // 総攻撃モードシーケンス (スコア360,000)
+        // 条件: 36万点以上、かつまだシーケンスが始まっていない
+        if (this.gameMode === 'aircraft' && this.score >= 360000 && !this.allOutAttackSequenceStarted) {
+            this.allOutAttackSequenceStarted = true;
+
+            // 1. レーザー制限解除 & 表示
+            this.laserUnlimited = true;
+            this.laserOverheated = false;
+            this.laserHeat = 0;
+
+            const notifyEl = document.createElement('div');
+            notifyEl.innerText = "LASER UNLIMITED MODE ACTIVATED!";
+            notifyEl.style.position = 'absolute';
+            notifyEl.style.top = '40%';
+            notifyEl.style.width = '100%';
+            notifyEl.style.textAlign = 'center';
+            notifyEl.style.fontSize = '64px';
+            notifyEl.style.fontWeight = 'bold';
+            notifyEl.style.color = 'cyan';
+            notifyEl.style.textShadow = '0 0 20px blue';
+            notifyEl.style.zIndex = '9999';
+            document.body.appendChild(notifyEl);
+
+            // 3秒後に解除表示を消して、Warningを表示
+            setTimeout(() => {
+                if (document.body.contains(notifyEl)) document.body.removeChild(notifyEl);
+
+                // Warning表示 (20秒間)
+                console.log("ALL OUT ATTACK WARNING START");
+                const warningEl = document.createElement('div');
+                warningEl.innerText = "WARNING: ALL AIRCRAFT ENGAGING IN 20s!"; // カウントダウンっぽく
+                warningEl.style.position = 'absolute';
+                warningEl.style.top = '30%';
+                warningEl.style.width = '100%';
+                warningEl.style.textAlign = 'center';
+                warningEl.style.fontSize = '48px';
+                warningEl.style.fontWeight = 'bold';
+                warningEl.style.color = 'red';
+                warningEl.style.textShadow = '0 0 10px yellow';
+                warningEl.style.zIndex = '9999';
+                warningEl.className = 'blink-text';
+                document.body.appendChild(warningEl);
+
+                // 20秒後にWarningを消して、攻撃開始
+                setTimeout(() => {
+                    if (document.body.contains(warningEl)) document.body.removeChild(warningEl);
+
+                    this.allOutAttackMode = true;
+                    console.log("ALL OUT ATTACK STARTED!");
+
+                    // 攻撃開始のダメ押し演出
+                    const startEl = document.createElement('div');
+                    startEl.innerText = "ENEMIES OPEN FIRE!";
+                    startEl.style.position = 'absolute';
+                    startEl.style.top = '35%';
+                    startEl.style.width = '100%';
+                    startEl.style.textAlign = 'center';
+                    startEl.style.fontSize = '56px';
+                    startEl.style.fontWeight = 'bold';
+                    startEl.style.color = '#ff4400';
+                    startEl.style.textShadow = '0 0 15px red';
+                    startEl.style.zIndex = '9999';
+                    document.body.appendChild(startEl);
+                    setTimeout(() => {
+                        if (document.body.contains(startEl)) document.body.removeChild(startEl);
+                    }, 3000);
+
+                }, 20000);
+
+            }, 3000);
         }
 
         // 絨毯爆撃の逐次生成
