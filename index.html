@@ -3,7 +3,10 @@
 
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>3D ミサイル迎撃ゲーム</title>
 </head>
 
@@ -50,6 +53,69 @@
     </div>
 
     <div id="radar-container"></div>
+
+    <!-- モバイル用コントロール -->
+    <div id="mobile-controls">
+      <!-- 右側パネル：シールド→レーダー→FIREボタン -->
+      <div id="mobile-right-panel">
+        <div id="mobile-health">🛡️ <span id="mobile-health-value">100</span>%</div>
+        <div id="mobile-radar-wrapper"></div>
+        <button id="mobile-fire-btn" class="mobile-btn">
+          <span class="fire-icon">🔥</span>
+          <span class="fire-text">FIRE</span>
+        </button>
+      </div>
+      <!-- 左側パネル：武器ステータス→武器アイコン -->
+      <div id="mobile-left-panel">
+        <!-- 武器ステータス表示（武器アイコンの上） -->
+        <div id="mobile-weapon-status">
+          <div id="mobile-missile-status" class="weapon-status-row">
+            <span class="status-label">MSL</span>
+            <span id="mobile-missile-ammo" class="status-value">10</span>
+          </div>
+          <div id="mobile-laser-status" class="weapon-status-row">
+            <span class="status-label">HEAT</span>
+            <div id="mobile-laser-gauge">
+              <div id="mobile-laser-fill"></div>
+            </div>
+          </div>
+          <div id="mobile-laser-cooldown" class="hidden">
+            <span id="mobile-cooldown-timer">20</span>s
+          </div>
+        </div>
+        <!-- 武器アイコン -->
+        <div id="mobile-weapon-switch">
+          <button class="mobile-weapon-btn active" data-weapon="vulcan">
+            <img src="/src/assets/icon-vulcan.png" alt="バルカン" class="weapon-icon"
+              onerror="this.style.display='none';this.parentElement.innerHTML='V'">
+          </button>
+          <button class="mobile-weapon-btn" data-weapon="missile">
+            <img src="/src/assets/icon-missile.png" alt="ミサイル" class="weapon-icon"
+              onerror="this.style.display='none';this.parentElement.innerHTML='M'">
+          </button>
+          <button class="mobile-weapon-btn" data-weapon="laser">
+            <img src="/src/assets/icon-laser.png" alt="レーザー" class="weapon-icon"
+              onerror="this.style.display='none';this.parentElement.innerHTML='L'">
+          </button>
+        </div>
+      </div>
+      <div id="mobile-stats">
+        <span id="mobile-wave">W<span id="mobile-wave-value">1</span></span>
+        <span class="stats-divider">|</span>
+        <span id="mobile-score"><span id="mobile-score-value">0</span>pt</span>
+        <span class="stats-divider">|</span>
+        <span class="mobile-kill-item" data-type="missile"><img src="/src/assets/icon-missile.png"
+            class="mobile-kill-icon" alt=""><span id="mobile-kill-missile">0</span></span>
+        <span class="mobile-kill-item" data-type="drone"><img src="/src/assets/icon-drone.png" class="mobile-kill-icon"
+            alt=""><span id="mobile-kill-drone">0</span></span>
+        <span class="mobile-kill-item" data-type="fighter"><img src="/src/assets/icon-fighter.png"
+            class="mobile-kill-icon" alt=""><span id="mobile-kill-fighter">0</span></span>
+        <span class="mobile-kill-item" data-type="helicopter"><img src="/src/assets/icon-helicopter.png"
+            class="mobile-kill-icon" alt=""><span id="mobile-kill-helicopter">0</span></span>
+        <span class="mobile-kill-item" data-type="bomber"><img src="/src/assets/icon-bomber.png"
+            class="mobile-kill-icon" alt=""><span id="mobile-kill-bomber">0</span></span>
+      </div>
+    </div>
 
     <!-- レティクル（武器によって形状が変化） -->
     <div id="reticle-container">
@@ -100,16 +166,16 @@
             <h3>CONTROLS & WEAPONS</h3>
             <div class="info-grid">
               <div class="info-label">MOUSE MOVE</div>
-              <div class="info-value">照準移動</div>
+              <div class="info-value">照準移動（モバイル：画面スワイプ）</div>
 
               <div class="info-label">KEY [1] / LEFT CLICK</div>
-              <div class="info-value">20mm バルカン砲 (連射・弾数無限・迎撃用)</div>
+              <div class="info-value">20mm バルカン砲 (連射・弾数無限・迎撃用)（モバイル：FIREボタン長押し）</div>
 
               <div class="info-label">KEY [2] / RIGHT CLICK</div>
-              <div class="info-value">対空誘導ミサイル (自動ロックオン・クリックで一斉発射)</div>
+              <div class="info-value">対空誘導ミサイル (自動ロックオン・クリックで一斉発射)（モバイル：FIREボタンタップ）</div>
 
               <div class="info-label">KEY [3] / SPACE BAR</div>
-              <div class="info-value">高出力レーザー (5秒連続照射でオーバーヒート・冷却20秒)</div>
+              <div class="info-value">高出力レーザー (5秒連続照射でオーバーヒート・冷却20秒)（モバイル：FIREボタン長押し）</div>
 
               <div class="info-label">ESC KEY</div>
               <div class="info-value">作戦一時中断 / 再開</div>
@@ -137,16 +203,16 @@
             <h3>CONTROLS & WEAPONS</h3>
             <div class="info-grid">
               <div class="info-label">MOUSE MOVE</div>
-              <div class="info-value">照準移動</div>
+              <div class="info-value">照準移動（モバイル：画面スワイプ）</div>
 
               <div class="info-label">KEY [1] / LEFT CLICK</div>
-              <div class="info-value">20mm バルカン砲 (連射・弾数無限)</div>
+              <div class="info-value">20mm バルカン砲 (連射・弾数無限)（モバイル：FIREボタン長押し）</div>
 
               <div class="info-label">KEY [2] / RIGHT CLICK</div>
-              <div class="info-value">対空誘導ミサイル (自動ロックオン・クリックで一斉発射)</div>
+              <div class="info-value">対空誘導ミサイル (自動ロックオン・クリックで一斉発射)（モバイル：FIREボタンタップ）</div>
 
               <div class="info-label">KEY [3] / SPACE BAR</div>
-              <div class="info-value">高出力レーザー (5秒連続照射でオーバーヒート・冷却20秒)</div>
+              <div class="info-value">高出力レーザー (5秒連続照射でオーバーヒート・冷却20秒)（モバイル：FIREボタン長押し）</div>
             </div>
           </div>
 

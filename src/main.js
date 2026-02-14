@@ -12,13 +12,34 @@ scene.fog = new THREE.FogExp2(0x000510, 0.005);
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 camera.position.set(0, 2, 0);
+// FPSスタイルのカメラ回転 - ロール（傾き）を防止するためYXZ順序を使用
+camera.rotation.order = 'YXZ';
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: !isTouchDevice });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.getElementById('game-container').appendChild(renderer.domElement);
 
 const controls = new PointerLockControls(camera, document.body);
 const gameLoop = new GameLoop(scene, camera);
+
+// モバイルデバイス時：レーダーをモバイルラッパーに移動
+if (isTouchDevice) {
+  const radarContainer = document.getElementById('radar-container');
+  const mobileRadarWrapper = document.getElementById('mobile-radar-wrapper');
+  if (radarContainer && mobileRadarWrapper) {
+    // レーダーキャンバスをモバイルラッパーに移動
+    const radarCanvas = radarContainer.querySelector('canvas');
+    if (radarCanvas) {
+      mobileRadarWrapper.appendChild(radarCanvas);
+      radarCanvas.style.width = '100%';
+      radarCanvas.style.height = '100%';
+      radarCanvas.style.borderRadius = '50%';
+    }
+  }
+}
 
 const btnMissile = document.getElementById('btn-missile');
 const btnAircraft = document.getElementById('btn-aircraft');
@@ -35,8 +56,23 @@ const handleStart = (mode) => {
   gameLoop.startGame(mode);
   // 音声システム初期化
   audioManager.init();
-  // その後ポインターロックを要求
-  controls.lock();
+
+  // タッチデバイスならポインターロックせずに開始
+  if (isTouchDevice) {
+    console.log('Main: Touch device detected, bypassing pointer lock');
+    gameLoop.isPlaying = true;
+
+    // UIを隠す
+    const messageOverlay = document.getElementById('message-overlay');
+    if (messageOverlay) messageOverlay.classList.add('hidden');
+    // 縦画面警告をゲーム中のみ表示するためのクラス切替
+    document.getElementById('ui-layer')?.classList.add('playing');
+    audioManager.resume();
+  } else {
+    // PCならポインターロックを要求
+    document.getElementById('ui-layer')?.classList.add('playing');
+    controls.lock();
+  }
 };
 
 if (btnMissile) {
@@ -135,8 +171,12 @@ if (btnResume) {
     if (pauseOverlay) pauseOverlay.classList.add('hidden');
     gameLoop.isPlaying = true;
 
-    // ポインターロックの再要求
-    controls.lock();
+    if (!isTouchDevice) {
+      // ポインターロックの再要求
+      controls.lock();
+    } else {
+      audioManager.resume();
+    }
   };
 
   btnResume.addEventListener('click', resumeAction);
@@ -189,13 +229,232 @@ window.addEventListener('mouseup', () => {
   gameLoop.setFiring(false);
 });
 
-window.addEventListener('resize', () => {
+const handleResize = () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+};
+window.addEventListener('resize', handleResize);
+// 画面回転時のリサイズ対応
+window.addEventListener('orientationchange', () => {
+  setTimeout(handleResize, 100);
 });
 
 const clock = new THREE.Clock();
+// --- Mobile Touch Controls ---
+// isTouchDevice は上部で既に定義されている
+let touchStartX = 0;
+let touchStartY = 0;
+let isTouchMoving = false;
+let lastTouchTime = 0;
+
+// タッチ感度設定（値が大きいほど敏感）
+const touchSensitivity = 0.4; // 少ない指の動きで大きく照準が動く
+const touchDeadzone = 2; // デッドゾーンも少し小さくして反応性向上
+
+// タッチによるエイミング用の変数
+let touchId = null; // アクティブなタッチのID
+
+window.addEventListener('touchstart', (e) => {
+  // すでにタッチ中の場合や、UIボタン上のタッチは除外
+  if (touchId !== null) return;
+
+  const touch = e.touches[0];
+  const target = e.target;
+
+  // モバイルコントロールボタン上のタッチは無視
+  if (target.closest('#mobile-controls') ||
+    target.closest('#mobile-fire-btn') ||
+    target.closest('#mobile-weapon-switch') ||
+    target.closest('.weapon') ||
+    target.closest('#mode-selection') ||
+    target.closest('#message-overlay') ||
+    target.closest('#pause-overlay') ||
+    target.closest('#info-overlay')) {
+    return;
+  }
+
+  // ブラウザデフォルト動作（ズーム・スクロール等）を防止
+  e.preventDefault();
+
+  touchId = touch.identifier;
+  touchStartX = touch.clientX;
+  touchStartY = touch.clientY;
+  isTouchMoving = false;
+  lastTouchTime = Date.now();
+}, { passive: false });
+
+window.addEventListener('touchmove', (e) => {
+  if (!gameLoop.isPlaying) return;
+
+  // 対象のタッチを探す
+  let touch = null;
+  for (let i = 0; i < e.touches.length; i++) {
+    if (e.touches[i].identifier === touchId) {
+      touch = e.touches[i];
+      break;
+    }
+  }
+
+  if (!touch) return;
+
+  e.preventDefault(); // スクロール防止
+
+  const dx = touch.clientX - touchStartX;
+  const dy = touch.clientY - touchStartY;
+
+  // デッドゾーン内なら動かさない
+  if (Math.abs(dx) < touchDeadzone && Math.abs(dy) < touchDeadzone) {
+    return;
+  }
+
+  isTouchMoving = true;
+
+  // 画面サイズに応じた感度調整（小さい画面ほど感度を上げる）
+  const screenFactor = Math.min(window.innerWidth, window.innerHeight) / 400;
+  const adjustedSensitivity = touchSensitivity / Math.max(screenFactor, 0.5);
+
+  // 直感的な操作：指を動かした方向にカメラが向く
+  // 水平方向（左右）- 指を右に動かすと右を向く
+  camera.rotation.y -= dx * adjustedSensitivity * (Math.PI / 180);
+
+  // 垂直方向（上下）- 指を上に動かすと上を向く
+  const newPitch = camera.rotation.x - dy * adjustedSensitivity * (Math.PI / 180);
+  // 上下の回転制限（真上/真下の少し手前まで）
+  camera.rotation.x = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, newPitch));
+
+  // ロール（傾き）を常に0に固定
+  camera.rotation.z = 0;
+
+  // 次のフレームの基準点を更新
+  touchStartX = touch.clientX;
+  touchStartY = touch.clientY;
+}, { passive: false });
+
+window.addEventListener('touchend', (e) => {
+  // 対象のタッチが終了したか確認
+  let found = false;
+  for (let i = 0; i < e.changedTouches.length; i++) {
+    if (e.changedTouches[i].identifier === touchId) {
+      found = true;
+      break;
+    }
+  }
+
+  if (!found) return;
+
+  const tapDuration = Date.now() - lastTouchTime;
+
+  // 移動量が少なく、タップ時間が短ければタップ（発射）とみなす
+  if (gameLoop.isPlaying && !isTouchMoving && tapDuration < 300) {
+    if (gameLoop.weaponType === 'missile') {
+      gameLoop.fireMissiles();
+    } else {
+      gameLoop.setFiring(true);
+      setTimeout(() => gameLoop.setFiring(false), 150);
+    }
+  }
+
+  touchId = null;
+});
+
+window.addEventListener('touchcancel', () => {
+  touchId = null;
+});
+
+// 武器アイコンのタッチ切り替え対応
+['weapon-vulcan', 'weapon-missile', 'weapon-laser'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) {
+    // clickイベントはタッチでも発生するが、反応を確実にする
+    el.addEventListener('click', (e) => {
+      // ゲームプレイ中なら
+      if (gameLoop.isPlaying) {
+        e.stopPropagation(); // 発射の発火を防ぐ
+        const type = id.replace('weapon-', '');
+        gameLoop.switchWeapon(type);
+        updateMobileWeaponUI(type);
+      }
+    });
+  }
+});
+
+// --- Mobile Fire Button & Weapon Switch ---
+const mobileFireBtn = document.getElementById('mobile-fire-btn');
+const mobileWeaponBtns = document.querySelectorAll('.mobile-weapon-btn');
+let mobileFireInterval = null;
+
+// モバイル武器UIの更新
+function updateMobileWeaponUI(type) {
+  mobileWeaponBtns.forEach(btn => {
+    btn.classList.remove('active');
+    if (btn.dataset.weapon === type) {
+      btn.classList.add('active');
+    }
+  });
+  // 既存のweapon-displayも同期
+  document.querySelectorAll('.weapon').forEach(el => {
+    el.classList.remove('active');
+  });
+  const activeWeapon = document.getElementById(`weapon-${type}`);
+  if (activeWeapon) activeWeapon.classList.add('active');
+}
+
+// モバイル発射ボタン
+if (mobileFireBtn) {
+  // 長押しで連続射撃
+  mobileFireBtn.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (gameLoop.isPlaying) {
+      if (gameLoop.weaponType === 'missile') {
+        // ミサイルはタップごとに発射
+        gameLoop.fireMissiles();
+      } else {
+        // バルカン/レーザーは長押しで連続発射
+        gameLoop.setFiring(true);
+        // フィードバックとして発射状態を維持
+        mobileFireInterval = setInterval(() => {
+          if (!gameLoop.isPlaying) {
+            clearInterval(mobileFireInterval);
+            gameLoop.setFiring(false);
+          }
+        }, 100);
+      }
+    }
+  }, { passive: false });
+
+  mobileFireBtn.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    gameLoop.setFiring(false);
+    if (mobileFireInterval) {
+      clearInterval(mobileFireInterval);
+      mobileFireInterval = null;
+    }
+  }, { passive: false });
+
+  mobileFireBtn.addEventListener('touchcancel', () => {
+    gameLoop.setFiring(false);
+    if (mobileFireInterval) {
+      clearInterval(mobileFireInterval);
+      mobileFireInterval = null;
+    }
+  });
+}
+
+// モバイル武器切替ボタン
+mobileWeaponBtns.forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (gameLoop.isPlaying) {
+      const type = btn.dataset.weapon;
+      gameLoop.switchWeapon(type);
+      updateMobileWeaponUI(type);
+    }
+  });
+});
+
 function animate() {
   requestAnimationFrame(animate);
   const dt = clock.getDelta();

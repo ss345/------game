@@ -249,8 +249,11 @@ export class GameLoop {
     gameOver() {
         this.isPlaying = false;
         this.messageTitle.innerText = "ゲームオーバー";
-        this.messageSub.innerText = "クリックして再挑戦";
+        const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+        this.messageSub.innerText = isTouchDevice ? "タップして再挑戦" : "クリックして再挑戦";
         this.messageOverlay.classList.remove('hidden');
+        // 縦画面警告を非表示にする
+        document.getElementById('ui-layer')?.classList.remove('playing');
     }
 
     clearEntities() {
@@ -810,6 +813,81 @@ export class GameLoop {
             } else {
                 laserCooldownEl.classList.add('hidden');
             }
+        }
+
+        // モバイルUI同期
+        const mobileScoreEl = document.getElementById('mobile-score-value');
+        const mobileHealthEl = document.getElementById('mobile-health-value');
+        const mobileWaveEl = document.getElementById('mobile-wave-value');
+        if (mobileScoreEl) mobileScoreEl.innerText = this.score;
+        if (mobileHealthEl) mobileHealthEl.innerText = this.health;
+        if (mobileWaveEl) mobileWaveEl.innerText = this.wave;
+
+        // モバイル撃墜数（ゲームモードによって表示切替）
+        const mobileKillItems = document.querySelectorAll('.mobile-kill-item');
+        mobileKillItems.forEach(item => {
+            const type = item.dataset.type;
+            const valueEl = item.querySelector('span');
+            if (valueEl && this.kills[type] !== undefined) {
+                valueEl.innerText = this.kills[type];
+            }
+            // 航空機モードではミサイル・ドローンは非表示
+            if (this.gameMode === 'aircraft') {
+                if (type === 'missile' || type === 'drone') {
+                    item.classList.add('hidden');
+                } else {
+                    item.classList.remove('hidden');
+                }
+            } else {
+                // ミサイルモードでは戦闘機・ヘリ・爆撃機は非表示
+                if (type === 'fighter' || type === 'helicopter' || type === 'bomber') {
+                    item.classList.add('hidden');
+                } else {
+                    item.classList.remove('hidden');
+                }
+            }
+        });
+
+        // モバイル武器ステータス同期
+        const mobileMissileAmmo = document.getElementById('mobile-missile-ammo');
+        const mobileLaserFill = document.getElementById('mobile-laser-fill');
+        const mobileLaserCooldown = document.getElementById('mobile-laser-cooldown');
+        const mobileCooldownTimer = document.getElementById('mobile-cooldown-timer');
+
+        if (mobileMissileAmmo) {
+            mobileMissileAmmo.innerText = this.missileAmmo;
+            mobileMissileAmmo.style.color = this.missileReloadTimer > 0 ? '#ff8800' : '#fff';
+        }
+
+        if (mobileLaserFill) {
+            const heatPercent = (this.laserHeat / this.maxLaserHeat) * 100;
+            mobileLaserFill.style.width = `${heatPercent}%`;
+            if (this.laserOverheated) {
+                mobileLaserFill.classList.add('overheating');
+            } else {
+                mobileLaserFill.classList.remove('overheating');
+            }
+        }
+
+        if (mobileLaserCooldown && mobileCooldownTimer) {
+            if (this.laserOverheated) {
+                mobileLaserCooldown.classList.remove('hidden');
+                mobileCooldownTimer.innerText = Math.ceil(this.laserCooldownTimer);
+            } else {
+                mobileLaserCooldown.classList.add('hidden');
+            }
+        }
+
+        // モバイル武器ボタンのロック状態
+        if (this.gameMode === 'aircraft') {
+            document.querySelectorAll('.mobile-weapon-btn').forEach(btn => {
+                const weapon = btn.dataset.weapon;
+                if (weapon === 'missile') {
+                    btn.classList.toggle('locked', this.score < 2000);
+                } else if (weapon === 'laser') {
+                    btn.classList.toggle('locked', this.score < 10000);
+                }
+            });
         }
     }
 

@@ -15,6 +15,11 @@ body {
   overflow: hidden;
   background-color: var(--bg-color);
   user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior: none;
 }
 
 #game-container {
@@ -548,4 +553,625 @@ body {
 
 .blink-text {
   animation: blink 0.5s infinite alternate;
+}
+
+/* --- Mobile / Tablet Optimization --- */
+@media (max-width: 1024px) {
+
+  #score-display,
+  #health-display {
+    font-size: 1.2rem;
+    top: 10px;
+  }
+
+  #wave-display {
+    font-size: 1rem;
+    top: 35px;
+  }
+
+  #kill-display {
+    top: 60px;
+    padding: 5px;
+    gap: 5px;
+  }
+
+  .kill-item {
+    gap: 8px;
+    min-width: 80px;
+  }
+
+  .kill-icon {
+    width: 24px;
+    height: 24px;
+  }
+
+  .kill-item span:last-child {
+    font-size: 0.9rem;
+  }
+
+  #weapon-display {
+    bottom: 20px;
+    gap: 10px;
+  }
+
+  .weapon {
+    padding: 5px 10px;
+    min-width: 80px;
+    font-size: 0.8rem;
+  }
+
+  #radar-container {
+    width: 120px;
+    height: 120px;
+    bottom: 15px;
+    right: 15px;
+  }
+
+  #reticle-vulcan {
+    font-size: 1.5rem;
+  }
+
+  #reticle-missile .circle {
+    width: 200px;
+    height: 200px;
+  }
+
+  #reticle-missile #lockon-count {
+    top: 110px;
+  }
+
+  #reticle-laser .circle-small {
+    width: 120px;
+    height: 120px;
+  }
+
+  #reticle-laser #laser-target {
+    top: 20px;
+  }
+
+  #mode-selection {
+    flex-direction: column;
+    /* スマホ縦持ちなどは縦並びにするが、基本は横持ち推奨 */
+    gap: 15px;
+  }
+
+  .mode-btn {
+    padding: 10px 20px;
+    min-width: 150px;
+    font-size: 1rem;
+  }
+}
+
+/* 横画面推奨の案内 (縦画面時) - ゲームプレイ中のみ表示 */
+@media (max-width: 768px) and (orientation: portrait) {
+  #ui-layer.playing::before {
+    content: "横画面でプレイしてください";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: var(--highlight-color);
+    font-size: 1.5rem;
+    font-weight: bold;
+    background: rgba(0, 0, 0, 0.9);
+    padding: 20px 30px;
+    border: 2px solid var(--highlight-color);
+    z-index: 99999;
+    pointer-events: none;
+    text-align: center;
+    white-space: nowrap;
+  }
+}
+
+/* --- Mobile Controls --- */
+#mobile-controls {
+  display: none;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  z-index: 100;
+}
+
+/* 右側パネル（シールド→レーダー→FIREボタン） */
+#mobile-right-panel {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  pointer-events: auto;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-right: env(safe-area-inset-right);
+}
+
+#mobile-health {
+  background: rgba(0, 30, 30, 0.8);
+  padding: 8px 15px;
+  border: 2px solid var(--highlight-color);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  color: var(--highlight-color);
+  font-weight: bold;
+  text-shadow: 0 0 10px var(--highlight-color);
+  white-space: nowrap;
+}
+
+#mobile-radar-wrapper {
+  width: 100px;
+  height: 100px;
+  background: rgba(0, 20, 0, 0.6);
+  border: 2px solid #0f0;
+  border-radius: 50%;
+  position: relative;
+  box-shadow: 0 0 15px rgba(0, 255, 0, 0.3);
+  flex-shrink: 0;
+}
+
+#mobile-fire-btn {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: linear-gradient(145deg, rgba(255, 50, 50, 0.9), rgba(200, 0, 0, 0.95));
+  border: 3px solid #ff6666;
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: bold;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  box-shadow: 0 0 30px rgba(255, 0, 0, 0.5), inset 0 0 20px rgba(255, 100, 100, 0.3);
+  cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.1s;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  margin-top: auto;
+  flex-shrink: 0;
+}
+
+#mobile-fire-btn:active {
+  transform: scale(0.9);
+  box-shadow: 0 0 15px rgba(255, 0, 0, 0.8), inset 0 0 30px rgba(255, 150, 150, 0.5);
+  background: linear-gradient(145deg, rgba(255, 100, 100, 0.9), rgba(255, 50, 50, 1));
+}
+
+#mobile-fire-btn .fire-icon {
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+#mobile-fire-btn .fire-text {
+  font-size: 0.65rem;
+  margin-top: 2px;
+  letter-spacing: 1px;
+}
+
+/* 左側パネル（武器ステータス + 武器アイコン） */
+#mobile-left-panel {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  pointer-events: auto;
+  padding-left: env(safe-area-inset-left);
+}
+
+#mobile-weapon-switch {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mobile-weapon-btn {
+  width: 55px;
+  height: 55px;
+  border-radius: 12px;
+  background: rgba(0, 50, 0, 0.8);
+  border: 2px solid #0f0;
+  color: #0f0;
+  font-size: 1.2rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 8px;
+}
+
+.mobile-weapon-btn .weapon-icon {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 0 5px #0f0);
+}
+
+.mobile-weapon-btn.active {
+  background: rgba(0, 150, 0, 0.9);
+  box-shadow: 0 0 20px rgba(0, 255, 0, 0.7);
+  transform: scale(1.15);
+  border-color: #0ff;
+}
+
+.mobile-weapon-btn.locked {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+/* 武器ステータス表示 */
+#mobile-weapon-status {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  background: rgba(0, 20, 20, 0.8);
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--highlight-color);
+  min-width: 80px;
+}
+
+.weapon-status-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.7rem;
+}
+
+.status-label {
+  color: var(--highlight-color);
+  font-weight: bold;
+  min-width: 30px;
+}
+
+.status-value {
+  color: #fff;
+  font-weight: bold;
+}
+
+#mobile-laser-gauge {
+  flex: 1;
+  height: 8px;
+  background: #333;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+#mobile-laser-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--highlight-color);
+  transition: width 0.1s, background 0.3s;
+}
+
+#mobile-laser-fill.overheating {
+  background: #ff4444;
+}
+
+#mobile-laser-cooldown {
+  color: #ff4444;
+  font-size: 0.7rem;
+  font-weight: bold;
+  text-align: center;
+  animation: blink 0.5s infinite alternate;
+}
+
+#mobile-laser-cooldown.hidden {
+  display: none;
+}
+
+/* 中央下：スコア・撃墜数 */
+#mobile-stats {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 20, 0, 0.8);
+  padding: 5px 12px;
+  border: 1px solid #0f0;
+  border-radius: 20px;
+  pointer-events: none;
+  padding-bottom: calc(5px + env(safe-area-inset-bottom));
+  white-space: nowrap;
+  font-size: 0.75rem;
+}
+
+#mobile-wave {
+  color: var(--highlight-color);
+  font-weight: bold;
+  font-size: 0.7rem;
+}
+
+#mobile-score {
+  color: #0f0;
+  font-weight: bold;
+  text-shadow: 0 0 5px #0f0;
+}
+
+.stats-divider {
+  color: #555;
+}
+
+.mobile-kill-item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.mobile-kill-item.hidden {
+  display: none;
+}
+
+.mobile-kill-icon {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 2px var(--highlight-color));
+}
+
+.mobile-kill-item span {
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: bold;
+}
+
+/* タッチデバイス時のみ表示 */
+@media (pointer: coarse) {
+  #mobile-controls {
+    display: block;
+  }
+
+  /* PC用UIをモバイルで非表示 */
+  #score-display,
+  #wave-display,
+  #health-display,
+  #kill-display,
+  #weapon-display,
+  #radar-container {
+    display: none !important;
+  }
+
+  /* 既存の武器パネルのキー表示を隠す */
+  .weapon .key {
+    display: none;
+  }
+
+  .weapon {
+    pointer-events: auto;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Safe Area対応強化（PC用） */
+@supports (padding: env(safe-area-inset-bottom)) {
+  #weapon-display {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  #radar-container {
+    bottom: calc(20px + env(safe-area-inset-bottom));
+    right: calc(20px + env(safe-area-inset-right));
+  }
+
+  #score-display,
+  #wave-display,
+  #kill-display {
+    left: calc(20px + env(safe-area-inset-left));
+  }
+
+  #health-display {
+    right: calc(20px + env(safe-area-inset-right));
+  }
+}
+
+/* モバイルでのinfo-overlay対応 */
+@media (max-width: 768px) {
+  .info-content {
+    width: 95%;
+    max-height: 85vh;
+    margin: 10px;
+  }
+
+  .info-header {
+    padding: 15px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .info-header h2 {
+    font-size: 1.3rem;
+    flex: 1 0 100%;
+    text-align: center;
+  }
+
+  .close-btn {
+    position: absolute;
+    right: 10px;
+    top: 10px;
+    padding: 8px 12px;
+  }
+
+  .tab-btn {
+    padding: 10px 5px;
+    font-size: 0.9rem;
+  }
+
+  .info-body {
+    padding: 10px;
+  }
+
+  .info-block {
+    padding: 10px;
+    margin-bottom: 15px;
+  }
+
+  .info-block h3 {
+    font-size: 1rem;
+  }
+
+  .info-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .info-label {
+    font-size: 0.85rem;
+  }
+
+  .info-value {
+    font-size: 0.8rem;
+    padding-left: 10px;
+    border-left: 2px solid #0f0;
+    margin-bottom: 10px;
+  }
+
+  .event-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .event-score {
+    width: auto;
+    margin-bottom: 5px;
+  }
+
+  #message-overlay {
+    width: 90%;
+    max-width: 400px;
+    padding: 25px 20px;
+  }
+
+  #message-title {
+    font-size: 2rem;
+  }
+
+  #message-sub {
+    font-size: 1.1rem;
+    margin-top: 15px;
+  }
+}
+
+/* 小さい画面向け（スマートフォン） */
+@media (max-width: 480px) and (orientation: landscape) {
+  #score-display {
+    font-size: 0.9rem;
+    top: 5px;
+    left: 10px;
+  }
+
+  #wave-display {
+    font-size: 0.8rem;
+    top: 25px;
+    left: 10px;
+  }
+
+  #kill-display {
+    top: 45px;
+    left: 10px;
+    padding: 3px;
+    gap: 3px;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .kill-item {
+    min-width: auto;
+    gap: 3px;
+  }
+
+  .kill-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .kill-item span:last-child {
+    font-size: 0.7rem;
+  }
+
+  #health-display {
+    font-size: 0.9rem;
+    top: 5px;
+    right: 10px;
+  }
+
+  #weapon-display {
+    bottom: 5px;
+    gap: 5px;
+  }
+
+  .weapon {
+    padding: 3px 8px;
+    min-width: 60px;
+    font-size: 0.65rem;
+  }
+
+  #radar-container {
+    width: 80px;
+    height: 80px;
+    bottom: 10px;
+    right: 10px;
+  }
+
+  #mobile-fire-btn {
+    width: 70px;
+    height: 70px;
+    right: 15px;
+    bottom: calc(80px + env(safe-area-inset-bottom));
+  }
+
+  #mobile-fire-btn .fire-icon {
+    font-size: 1.4rem;
+  }
+
+  #mobile-fire-btn .fire-text {
+    font-size: 0.6rem;
+  }
+
+  #mobile-weapon-switch {
+    left: 15px;
+    bottom: calc(80px + env(safe-area-inset-bottom));
+    gap: 5px;
+  }
+
+  .mobile-weapon-btn {
+    width: 40px;
+    height: 40px;
+    font-size: 1rem;
+  }
+
+  #reticle-vulcan {
+    font-size: 1.2rem;
+  }
+
+  #reticle-missile .circle {
+    width: 150px;
+    height: 150px;
+  }
+
+  #reticle-missile #lockon-count {
+    font-size: 0.7rem;
+    top: 80px;
+  }
+
+  #reticle-laser .circle-small {
+    width: 80px;
+    height: 80px;
+  }
 }
